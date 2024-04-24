@@ -2,7 +2,10 @@ search_sites = [
     "https://jobs.chronicle.com/jobsrss/?countrycode=US&keywords=",
     "https://careers.insidehighered.com/jobsrss/?countrycode=US&keywords=",
     "https://www.timeshighereducation.com/unijobs/jobsrss/?keywords=",
+    "https://main.hercjobs.org/jobs/?display=rss&keywords=",
+    "https://www.linkedin.com/jobs/search/?keywords=",
 ]
+
 
 
 search_words = [
@@ -11,6 +14,7 @@ search_words = [
     'mongodb',
     'javascript',
     ]
+
 
 
 bullet_resume = """Education:
