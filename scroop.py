@@ -91,7 +91,7 @@ random.shuffle(links)
 if not os.path.exists(output_filename):
     with open(output_filename, 'w') as file:
         # Write the header row to the output file
-        file.write('timestamp,job match,url,job is relevant to keywords,job is a good match with resume\n')
+        file.write('timestamp,job match,url,job is relevant to keywords,job is a good match with resume,note\n')
 
 # Check if the log file exists, if it doesn't, create it
 # The log file is used to keep track of which sites have been scanned
@@ -102,6 +102,7 @@ if not os.path.exists("scanned_sites.log"):
 for count, link in enumerate(links, start=1):
 
     job_match = False #initialize job_match to False
+    note = ""
 
     # Print the current link number and the link itself
     cprint(f"{count}/{len(links)} - {link}","cyan")
@@ -140,10 +141,11 @@ for count, link in enumerate(links, start=1):
             else:
                 job_is_relevant ="N/A"
                 job_is_a_good_match ="N/A"
+                note = "No keywords found in page content"
 
             # Append the results to the output file
             with open(output_filename, 'a') as file:
-                file.write(f'{datetime.now().strftime("%m/%d/%Y %I:%M %p")},{job_match},{link},{job_is_relevant},{job_is_a_good_match}\n')
+                file.write(f'{datetime.now().strftime("%m/%d/%Y %I:%M %p")},{job_match},{link},{job_is_relevant},{job_is_a_good_match},{note}\n')
             with open("scanned_sites.log", 'a') as file:
                 file.write(f"{link}\n")
     else:
