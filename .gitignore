@@ -1,0 +1,6 @@
+config.py
+*.csv
+*.log
+old/*
+__pycache__/*
+cached_pages/*
