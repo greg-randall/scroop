@@ -91,7 +91,7 @@ random.shuffle(links)
 if not os.path.exists(output_filename):
     with open(output_filename, 'w') as file:
         # Write the header row to the output file
-        file.write('timestamp,job match,url,job is relevant to keywords,job is a good match with resume,note\n')
+        file.write('timestamp,job match,url,job is relevant to keywords,job is a good match with resume\n')
 
 # Check if the log file exists, if it doesn't, create it
 # The log file is used to keep track of which sites have been scanned
@@ -102,7 +102,7 @@ if not os.path.exists("scanned_sites.log"):
 for count, link in enumerate(links, start=1):
 
     job_match = False #initialize job_match to False
-    note = ""
+    add_job_to_csv = False
 
     # Print the current link number and the link itself
     cprint(f"{count}/{len(links)} - {link}","cyan")
@@ -127,6 +127,8 @@ for count, link in enumerate(links, start=1):
             found_word = find_keywords(page_content, search_words)
 
             if found_word:
+                add_job_to_csv = True
+
                 # Ask the user to read the job listing and write a summary of required skills and degrees
                 job_summary = ollama_me(f"Please read this job listing and write a consise summary of required skills and degrees:\n\n{page_content}")
                 # Ask the user to determine if the job is relevant to the search words
@@ -138,14 +140,13 @@ for count, link in enumerate(links, start=1):
                 if job_is_relevant and job_is_a_good_match:
                     cprint(f"\tJOB FOUND!!!","green")
                     job_match = True                 
-            else:
-                job_is_relevant ="N/A"
-                job_is_a_good_match ="N/A"
-                note = "No keywords found in page content"
 
-            # Append the results to the output file
-            with open(output_filename, 'a') as file:
-                file.write(f'{datetime.now().strftime("%m/%d/%Y %I:%M %p")},{job_match},{link},{job_is_relevant},{job_is_a_good_match},{note}\n')
+            if add_job_to_csv: # We'll only add the job to the csv if we've determined it's relevant, meaning it has at least one keyword and the other checks above
+                # Append the results to the output file
+                with open(output_filename, 'a') as file:
+                    file.write(f'{datetime.now().strftime("%m/%d/%Y %I:%M %p")},{job_match},{link},{job_is_relevant},{job_is_a_good_match}\n')
+
+            # Append the link to the log file, so we know to skip it in the future, and to avoid duplicates
             with open("scanned_sites.log", 'a') as file:
                 file.write(f"{link}\n")
     else:
