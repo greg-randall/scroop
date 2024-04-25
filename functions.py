@@ -70,10 +70,8 @@ find_keywords
 
 
 from bs4 import BeautifulSoup
-from pprint import pprint
 from pyppeteer import launch
 from pyppeteer_stealth import stealth
-from pyppeteer.errors import TimeoutError as PyppeteerTimeoutError
 from termcolor import cprint
 from trafilatura import extract
 from urllib.parse import urlparse, quote
@@ -85,6 +83,8 @@ import re
 import requests
 import subprocess
 import time
+import xml.etree.ElementTree as ET
+
 
 
     
@@ -152,6 +152,14 @@ def page_content_valid(page_content, debug=False):
     if not isinstance(page_content, str) or 'incapsula' in page_content.lower() or "about lynx" in page_content.lower():
         return False
 
+    try: # check to see if the page is an RSS feed, if it is return True
+        root = ET.fromstring(page_content)
+        if root.tag == "rss" or root.tag == "feed":
+            return True
+    except ET.ParseError:
+        if debug:
+            cprint("\tPage content is not valid XML","yellow")  
+    
     # Get the first 2000 characters of the cleaned page content (just to save time and resources)
     clean_page_content = get_page_body_text(page_content)[:2000]
 
