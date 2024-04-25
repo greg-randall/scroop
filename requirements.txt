@@ -1,0 +1,6 @@
+beautifulsoup4
+pyppeteer
+pyppeteer-stealth
+termcolor
+trafilatura
+requests
