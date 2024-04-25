@@ -58,7 +58,7 @@ for count, (search_site, search_word) in enumerate([(site, word) for site in sea
     # Fetch the content of the page
     # The second argument to get_page_content is the maximum age of cached content in hours
     # If the cached content is older than this, it will be refreshed
-    page_content = get_page_content(page, 8)
+    page_content = get_page_content(page, 24)
 
     # If the page content was successfully fetched
     if page_content:
