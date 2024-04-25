@@ -73,6 +73,7 @@ from bs4 import BeautifulSoup
 from pprint import pprint
 from pyppeteer import launch
 from pyppeteer_stealth import stealth
+from pyppeteer.errors import TimeoutError as PyppeteerTimeoutError
 from termcolor import cprint
 from trafilatura import extract
 from urllib.parse import urlparse, quote
@@ -213,16 +214,25 @@ def lynx_pull(url, debug=False):
 async def pyppeteer_get_page_raw(url,debug=False):
     if debug:
         cprint("pyppeteer_get_page_raw","yellow")
-    # Launch a new browser instance
     browser = await launch()
-    # Open a new page in the browser
-    page = await browser.newPage()
-    # Apply stealth measures to the page to avoid being detected as a bot
-    await stealth(page)
-    # Navigate to the URL
-    await page.goto(url)
-    # Return the HTML content of the page
-    return await page.content()
+    try:
+        # Open a new page in the browser
+        page = await browser.newPage()
+        # Apply stealth measures to the page to avoid being detected as a bot
+        await stealth(page)
+        # Return the HTML content of the page
+        return await page.content()
+    
+    except Exception as e:
+        # If an error occurs during the process, print the error and return False
+        cprint(f"\tPyppeteer Get Page Raw - An error occurred: {e}","yellow")
+        return False
+    
+    finally:
+        cprint(f"\tPyppeteer Get Page Raw - Something crashed, hit the 'finally' block.","yellow")
+        await browser.close()
+
+    return False
 def pyppeteer_pull(url, debug=False):
     if debug:
         cprint("pyppeteer_pull","yellow")
