@@ -104,7 +104,7 @@ for count, link in enumerate(links, start=1):
     add_job_to_csv = False
 
     # Print the current link number and the link itself
-    cprint(f"{count}/{len(links)} - {link}","cyan")
+    print(f"\r{count}/{len(links)} - {link[:50]}...", end="", flush=True)
 
     # Open the log file and read its content
     with open("scanned_sites.log", 'r') as file:
@@ -137,7 +137,7 @@ for count, link in enumerate(links, start=1):
 
                 # If the job is relevant and a good match, print a success message
                 if job_is_relevant and job_is_a_good_match:
-                    cprint(f"\tJOB FOUND!!!","green")
+                    cprint(f"\n\nJOB FOUND!!! -- {link}\n","green")
                     job_match = True                 
 
             if add_job_to_csv: # We'll only add the job to the csv if we've determined it's relevant, meaning it has at least one keyword and the other checks above
@@ -154,3 +154,5 @@ for count, link in enumerate(links, start=1):
             cprint(f"\tSkipping -- Link invalid or already scanned", "yellow")
         with open("scanned_sites.log", 'a') as file:
             file.write(f"{link}\n")
+
+print("\n\n\n")

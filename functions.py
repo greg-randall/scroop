@@ -178,7 +178,8 @@ def page_content_valid(page_content, debug=False):
             return False
         # If the output doesn't contain either 'true' or 'false', print a message and try again
         else:
-            cprint(f"\tOllama didn't answer the validation prompt with a True or False. Retrying...","red")
+            if debug:
+                cprint(f"\tOllama didn't answer the validation prompt with a True or False. Retrying...","red")
 
     # If no valid response was received after 3 tries, return False
     return False
@@ -233,11 +234,13 @@ async def pyppeteer_get_page_raw(url,debug=False):
     
     except Exception as e:
         # If an error occurs during the process, print the error and return False
-        cprint(f"\tPyppeteer Get Page Raw - An error occurred: {e}","yellow")
+        if debug:
+            cprint(f"\tPyppeteer Get Page Raw - An error occurred: {e}","yellow")
         return False
     
     finally:
-        cprint(f"\tPyppeteer Get Page Raw - Something crashed, hit the 'finally' block.","yellow")
+        if debug:
+            cprint(f"\tPyppeteer Get Page Raw - Something crashed, hit the 'finally' block.","yellow")
         await browser.close()
 
     return False
@@ -414,7 +417,8 @@ def ollama_true_or_false(prompt, retries=3, debug=False):
             if debug:
                 print(f"Prompt: {prompt[:500]}")
                 print(f"Ollama reply: {job_info[:500]}")
-            cprint("\tRetrying, didn't get True or False...","red")
+            if debug:
+                cprint("\tRetrying, didn't get True or False...","red")
     # If it's tried 'retries' times and still hasn't gotten a clear "true" or "false", it returns None and "red"
     return None
 

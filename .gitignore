@@ -5,3 +5,4 @@ old/*
 __pycache__/*
 cached_pages/*
 *.sh
+old*
