@@ -1,14 +1,14 @@
-# Job Search Automation with Ollama
+# Job Search Automation with Ollama/OpenAi
 
-Scroop automates the job search process by scraping job listings from various websites and filtering them based on user-defined keywords. It then uses Ollama to run a local LLM to determine the relevance of each job to the keywords and to your resume.
+Scroop automates the job search process by scraping job listings from various websites and filtering them based on user-defined keywords. It then uses Ollama or OpenAi to determine the relevance of each job to the keywords and to your resume.
 
 ## Installation
 
 1. Clone this repository to your local machine.
 2. Install the required Python libraries by running `pip install -r requirements.txt` in your terminal.
-3. Download and install [Ollama](https://ollama.com/download).
-4. Start the Ollama server `ollama serve`.
-5. Run the Dolphin-llama3 model `ollama run dolphin-llama3` from the [Ollama library](https://ollama.com/library/dolphin-llama3).
+3. Download and install [Ollama](https://ollama.com/download) or skip and use OpenAi.
+4. Start the Ollama server `ollama serve` or skip and use OpenAi.
+5. Run the Dolphin-llama3 model `ollama run dolphin-llama3` from the [Ollama library](https://ollama.com/library/dolphin-llama3) or skip and use OpenAi.
 
 ## Configuration
 
