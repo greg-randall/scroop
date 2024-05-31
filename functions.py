@@ -77,13 +77,20 @@ from trafilatura import extract
 from urllib.parse import urlparse, quote
 import asyncio
 import hashlib
+from llmlingua import PromptCompressor
+import nltk
 import ollama
+from openai import OpenAI
 import os
+import random
 import re
 import requests
 import subprocess
 import time
+from transformers import AutoTokenizer
 import xml.etree.ElementTree as ET
+
+
 
 
 
@@ -93,7 +100,7 @@ def get_page_body_text(raw_page, full_text=False, debug=False):
         cprint("get_page_body_text","yellow")
 
     # If raw_page is None or empty, return False
-    if not raw_page:
+    if not raw_page or not isinstance(raw_page, str):
         return False
 
     if full_text:
@@ -299,18 +306,19 @@ def get_page_content(url, cache_age=24, debug=False): #default cache age is 24 h
     if debug:
         print(f"\tcache {filepath} doesn't exist, collecting")
     # If the file doesn't exist, continue with the methods
-    methods = [basic_pull, lynx_pull, pyppeteer_pull]
-    for method in methods:
+    #methods = [basic_pull, lynx_pull, pyppeteer_pull]
+    #for method in methods:
+    #    if debug:
+    #        print(f"\ttrying {method.__name__.replace('_', ' ').title()} download method")        
+    #    output = method(url, debug)
+    output = selenium_get_raw_page(url, debug)
+    if output:
+        # Save the output to a file in the 'cached_pages' directory
+        with open(filepath, 'w') as file:
+            file.write(str(output))
         if debug:
-            print(f"\ttrying {method.__name__.replace('_', ' ').title()} download method")        
-        output = method(url, debug)
-        if output:
-            # Save the output to a file in the 'cached_pages' directory
-            with open(filepath, 'w') as file:
-                file.write(str(output))
-            if debug:
-                cprint(f"writing out data for future cache {filepath}","blue")
-            return output
+            cprint(f"writing out data for future cache {filepath}","blue")
+        return output
     return False
 
 # This function extracts all URLs from the content of a webpage
@@ -443,3 +451,217 @@ def find_keywords(page_content, search_words, debug=False):
 
     # If no search word is found in the page content after checking all the words, return the flag (which is False)
     return False
+
+
+
+
+
+
+
+
+
+
+OPEN_AI_COST = {
+    'gpt-4o':                       {'input': 5.00/1000000, 'output': 5.00/1000000},
+    'gpt-4-0125-preview':           {'input': .01/1000,     'output': 0.03/1000},
+    'gpt-4-1106-preview':           {'input': .01/1000,     'output': 0.03/1000},
+    'gpt-4-1106-vision-preview':    {'input': .01/1000,     'output': 0.03/1000},
+    'gpt-4':                        {'input': .03/1000,     'output': 0.06/1000},
+    'gpt-4-32k':                    {'input': .06/1000,     'output': 0.12/1000},
+    'gpt-3.5-turbo-0125':           {'input': .0005/1000,   'output': 0.0015/1000},
+    'gpt-3.5-turbo-instruct':       {'input': .0015/1000,   'output': 0.0020/1000},
+    'gpt-3.5-turbo-1106':           {'input': .0010/1000,   'output': 0.0020/1000},
+    'gpt-3.5-turbo-0613':           {'input': .0015/1000,   'output': 0.0020/1000},
+    'gpt-3.5-turbo-16k-0613':       {'input': .0030/1000,   'output': 0.0040/1000},
+    'gpt-3.5-turbo-0301':           {'input': .0015/1000,   'output': 0.0020/1000},
+}
+
+def calculate_cost(prompt_tokens, completion_tokens, input_cost, output_cost):
+    return (prompt_tokens * input_cost) + (completion_tokens * output_cost)
+
+def open_ai_cost(response):
+    model = response.model if not response.model.startswith('gpt-4o') else 'gpt-4o'
+    model = model if model in OPEN_AI_COST else 'gpt-4-32k'
+
+    if model == 'gpt-4-32k':
+        print("Model not found, using the most expensive model")
+
+    input_cost = OPEN_AI_COST[model]['input']
+    output_cost = OPEN_AI_COST[model]['output']
+
+    cost = calculate_cost(response.usage.prompt_tokens, response.usage.completion_tokens, input_cost, output_cost)
+
+    return cost
+
+
+def gpt_me(prompt,model,key, debug=False):
+    if debug:
+        cprint("gpt_me","yellow")
+    client = OpenAI(
+        api_key=key
+    )
+    chat_completion = client.chat.completions.create(
+        messages=[
+            {
+                "role": "user",
+                "content": prompt,
+            }
+        ],
+        model=model,
+    )
+    if debug:
+        cprint(f"cost: {open_ai_cost(chat_completion)*100}c","yellow")
+        print(f"chat_completion:\n{chat_completion}\n")
+    return chat_completion.choices[0].message.content
+
+
+
+
+# Disable parallelism for tokenizers to avoid potential issues
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+# Define a constant for the maximum number of tokens
+MAX_TOKENS = 500
+
+# Function to compress a buffer of text
+def compress_buffer(llm_lingua, buffer, debug=False):
+    # If debug mode is on, print the number of tokens in the buffer
+    if debug:
+        print(f"Compressing buffer with {len(tokenizer.encode(buffer, truncation=False, max_length=MAX_TOKENS))} tokens")
+    # Compress the buffer using the llm_lingua model
+    compressed = llm_lingua.compress_prompt(buffer, rate=0.5, force_tokens = ['?','.','!'])
+    # Return the compressed text
+    return compressed['compressed_prompt']
+
+# Function to compress a prompt
+def compress_prompt(text, debug=False):
+    # If debug mode is on, print the number of characters in the text
+    if debug:
+        print(f"Compressing prompt with {len(text)} characters")
+    # Initialize the llm_lingua model
+    llm_lingua = PromptCompressor(
+        model_name="microsoft/llmlingua-2-xlm-roberta-large-meetingbank",
+        use_llmlingua2=True,
+    )
+    
+    # Initialize the tokenizer
+    tokenizer = AutoTokenizer.from_pretrained("microsoft/llmlingua-2-xlm-roberta-large-meetingbank")
+
+    # Split the text into sentences
+    sentences = nltk.sent_tokenize(text)
+    
+    # Initialize the compressed text and buffer
+    compressed_text = ""
+    buffer = ""
+    # Loop over the sentences
+    for sentence in sentences:
+        # If adding the sentence to the buffer doesn't exceed the maximum number of tokens
+        if len(tokenizer.encode(f"{buffer}{sentence}", truncation=False, max_length=MAX_TOKENS)) <= MAX_TOKENS:
+            # If debug mode is on, print the number of tokens in the sentence and the total number of tokens
+            if debug:
+                print(f"Adding sentence with {len(tokenizer.encode(sentence, truncation=False, max_length=MAX_TOKENS))} tokens total = {len(tokenizer.encode(f'{buffer}{sentence}', truncation=False, max_length=MAX_TOKENS))} tokens")
+            # Add the sentence to the buffer
+            buffer += f"{sentence} "
+        else:
+            # If adding the sentence to the buffer would exceed the maximum number of tokens, compress the buffer and add it to the compressed text
+            compressed_text += f"{compress_buffer(llm_lingua, buffer, debug)} "
+            # Start a new buffer with the current sentence
+            buffer = f"{sentence} "
+    
+    # If there's any text left in the buffer, compress it and add it to the compressed text
+    if buffer:
+        compressed_text += f"{compress_buffer(llm_lingua, buffer, debug)} "
+    
+    # If debug mode is on, print the compressed text
+    if debug:
+        print(compressed_text)
+    # Return the compressed text, removing any trailing whitespace
+    return compressed_text.strip()
+
+
+# This function checks if a job is relevant by asking the Ollama API
+def gpt_true_or_false(prompt, model, open_ai_key, retries=3, debug=False):
+    if debug:
+        cprint("gpt_true_or_false","yellow")
+
+    if prompt.strip() == "" or prompt == None or prompt == False:
+        if debug:
+            cprint("\tPrompt is empty or None","red")
+        return None
+    
+    # It tries up to 'retries' times
+    for _ in range(retries):
+        # It sends the prompt to the Ollama API and gets a response
+        job_info = gpt_me(prompt, model, open_ai_key, debug)
+        # If the response contains "true", it returns True and "green"
+        if "true" in job_info.lower():
+            return True
+        # If the response contains "false", it returns False and "yellow"
+        elif "false" in job_info.lower():
+            return False
+        # If the response contains neither "true" nor "false", it prints the first 500 characters of the response
+        # and a message saying it's retrying, then continues to the next iteration of the loop
+        else:
+            if debug:
+                print(f"Prompt: {prompt[:500]}")
+                print(f"gpt reply: {job_info[:500]}")
+            if debug:
+                cprint("\tRetrying, didn't get True or False...","red")
+    # If it's tried 'retries' times and still hasn't gotten a clear "true" or "false", it returns None and "red"
+    return None
+
+
+
+
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+import selenium.webdriver.support.ui as ui
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.keys import Keys
+from fake_useragent import UserAgent
+from selenium.common.exceptions import NoSuchElementException
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.common.action_chains import ActionChains
+from urllib.parse import urljoin
+
+
+def selenium_get_raw_page(page_url, debug=False):
+    if debug:
+        cprint("selenium_get_raw_page","yellow")
+
+    
+    ua = UserAgent()
+    chrome_options = Options()
+    chrome_options.add_argument(f"user-agent={ua.random}")
+    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    if not debug:
+        chrome_options.add_argument("--headless")  # Run in headless mode
+    #chrome_options.add_argument(f'--proxy-server=socks5://{proxy_picker()}')
+    #chrome_options.add_argument("--proxy-server=socks5://199.102.106.94:4145")
+
+    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+    driver.get(url=page_url)
+    time.sleep(5)
+
+    for _ in range(20):
+        # Add some random mouse movements
+        action = ActionChains(driver)
+        action.move_by_offset(random.randint(1, 10), random.randint(1, 10))
+        action.perform()
+
+        if len(get_page_body_text(driver.page_source,True,False))>=250:
+            break
+        time.sleep(1)
+
+    # Convert all relative links to absolute
+    soup = BeautifulSoup(driver.page_source, 'html.parser')
+    for a in soup.find_all('a', href=True):
+        a['href'] = urljoin(page_url, a['href'])
+
+    driver.quit()
+
+    return str(soup)

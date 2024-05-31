@@ -52,7 +52,7 @@ for count, (search_site, search_word) in enumerate([(site, word) for site in sea
     
     # Print a message indicating that the page is being fetched
     # The total number of pages is the product of the number of search sites and search words
-    cprint(f"{count}/{len(search_sites)*len(search_words)} Getting page: {page}","cyan")
+    print(f"\r{count}/{len(search_sites)*len(search_words)} Getting page: {page}", end="", flush=True)
     
     # Fetch the content of the page
     # The second argument to get_page_content is the maximum age of cached content in hours
@@ -69,13 +69,15 @@ for count, (search_site, search_word) in enumerate([(site, word) for site in sea
         links.extend(fresh_links)
 
         # Print a success message with the number of links extracted
-        cprint(f"\tPage Collected! {len(fresh_links)} links","green")
+        if debug:
+            cprint(f"\tPage Collected! {len(fresh_links)} links","green")
     else:
         # If the page content was not successfully fetched, print an error message
-        cprint("\tNo page content retrieved","red")
+        if debug:
+            cprint("\tNo page content retrieved","red")
 
 # Print the total number of links collected, in green
-cprint(f"\n\nTotal Links: {len(links)}\n\n","green")
+print(f"\n\nTotal Links: {len(links)}\n")
 
 ####
 #Scan the generated links for job relevance
@@ -129,11 +131,25 @@ for count, link in enumerate(links, start=1):
                 add_job_to_csv = True
 
                 # Ask the user to read the job listing and write a summary of required skills and degrees
-                job_summary = ollama_me(f"Please read this job listing and write a consise summary of required skills and degrees:\n\n{page_content}")
+                prompt = f"Please read this job listing and write a consise summary of required skills and degrees:\n\n{compress_prompt(page_content)}"
+                if use_open_ai:
+                    job_summary = gpt_me(prompt,"gpt-3.5-turbo",open_ai_key)
+                else:
+                    job_summary = ollama_me(prompt)
+
                 # Ask the user to determine if the job is relevant to the search words
-                job_is_relevant = ollama_true_or_false(f"Read the job summary below and determine if it has anything to do with {make_list_human_readable(search_words)}. !!!Reply with a single word, TRUE or FALSE!!!\n\nJOB SUMMARY:  {job_summary}")
+                prompt = f"Read the job summary below and determine if it has anything to do with {make_list_human_readable(search_words)}. !!!Reply with a single word, TRUE or FALSE!!!\n\nJOB SUMMARY:  {compress_prompt(job_summary)}"
+                if use_open_ai:
+                    job_is_relevant = gpt_true_or_false(prompt,"gpt-3.5-turbo",open_ai_key, 3)
+                else:
+                    job_is_relevant = ollama_true_or_false(prompt)
+
                 # Ask the user to determine if the job is a good match with the resume
-                job_is_a_good_match = ollama_true_or_false(f"You are a hiring commitee, read the RESUME and JOB SUMMARY below and determine if you would hire the applicant for this job. !!!Reply with a single word, TRUE or FALSE!!!\n\nJOB SUMMARY:  {bullet_resume}\n\nJOB SUMMARY:  {job_summary}")
+                prompt = f"You are a hiring commitee, read the RESUME and JOB SUMMARY below and determine if you would hire the applicant for this job. !!!Reply with a single word, TRUE or FALSE!!!\n\nJOB SUMMARY:  {compress_prompt(bullet_resume)}\n\nJOB SUMMARY:  {compress_prompt(job_summary)}"
+                if use_open_ai:
+                    job_is_a_good_match = gpt_true_or_false(prompt,"gpt-4o", open_ai_key)
+                else:
+                    job_is_a_good_match = ollama_true_or_false(prompt)
 
                 # If the job is relevant and a good match, print a success message
                 if job_is_relevant and job_is_a_good_match:

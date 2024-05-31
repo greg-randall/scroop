@@ -1,3 +1,7 @@
+open_ai_key = ""
+
+use_open_ai = True # Set to False to use Ollama instead of OpenAI
+
 search_sites = [ 
     "https://jobs.chronicle.com/jobsrss/?countrycode=US&keywords=",
     "https://careers.insidehighered.com/jobsrss/?countrycode=US&keywords=",
