@@ -19,6 +19,8 @@ from termcolor import cprint
 from urllib.parse import quote
 import os
 import random
+import shutil
+
 
 
 
@@ -43,6 +45,8 @@ random.shuffle(search_words)
 #Search the sites for jobs
 ####
 
+print("Searching for jobs...\n")
+
 # Loop over each site in the list of search sites
 # The enumerate function is used to get the count of the current iteration (starting from 1)
 # A list comprehension is used to generate pairs of search sites and search words
@@ -52,12 +56,12 @@ for count, (search_site, search_word) in enumerate([(site, word) for site in sea
     
     # Print a message indicating that the page is being fetched
     # The total number of pages is the product of the number of search sites and search words
-    print(f"\r{count}/{len(search_sites)*len(search_words)} Getting page: {page}", end="", flush=True)
+    print(f"\r{count}/{len(search_sites)*len(search_words)} -- {page}", end="", flush=True)
     
     # Fetch the content of the page
     # The second argument to get_page_content is the maximum age of cached content in hours
     # If the cached content is older than this, it will be refreshed
-    page_content = get_page_content(page, 24)
+    page_content = get_page_content(page, 23.5)
 
     # If the page content was successfully fetched
     if page_content:
@@ -83,6 +87,7 @@ print(f"\n\nTotal Links: {len(links)}\n")
 #Scan the generated links for job relevance
 ####
 
+print("Scanning for jobs relevance...\n")
 # Shuffle the list of links to ensure randomness
 random.shuffle(links)
 
@@ -92,7 +97,7 @@ random.shuffle(links)
 if not os.path.exists(output_filename):
     with open(output_filename, 'w') as file:
         # Write the header row to the output file
-        file.write('timestamp,job match,url,job is relevant to keywords,job is a good match with resume\n')
+        file.write('timestamp,url,job is a good match with resume\n')
 
 # Check if the log file exists, if it doesn't, create it
 # The log file is used to keep track of which sites have been scanned
@@ -105,8 +110,10 @@ for count, link in enumerate(links, start=1):
     job_match = False #initialize job_match to False
     add_job_to_csv = False
 
-    # Print the current link number and the link itself
-    print(f"\r{count}/{len(links)} - {link[:50]}...", end="", flush=True)
+    # Print the current link number and the link itself and make sure the link is not too long
+    columns, _ = shutil.get_terminal_size()
+    max_link_length = columns - len(f"{count}/{len(links)} - ")
+    print(f"\r\033[K{count}/{len(links)} - {link[:max_link_length]}", end="", flush=True)
 
     # Open the log file and read its content
     with open("scanned_sites.log", 'r') as file:
@@ -120,7 +127,6 @@ for count, link in enumerate(links, start=1):
         page_content = get_page_body_text(page_content_raw)
 
         
-
         # If there is page content
         if page_content:
 
@@ -131,35 +137,20 @@ for count, link in enumerate(links, start=1):
                 add_job_to_csv = True
 
                 # Ask the user to read the job listing and write a summary of required skills and degrees
-                prompt = f"Please read this job listing and write a consise summary of required skills and degrees:\n\n{compress_prompt(page_content)}"
-                if use_open_ai:
-                    job_summary = gpt_me(prompt,"gpt-3.5-turbo",open_ai_key)
-                else:
-                    job_summary = ollama_me(prompt)
+                prompt = f"Please read this job listing and write a consise summary of required skills, degrees, etc:\n\n{compress_prompt(page_content)}"
 
-                # Ask the user to determine if the job is relevant to the search words
-                prompt = f"Read the job summary below and determine if it has anything to do with {make_list_human_readable(search_words)}. !!!Reply with a single word, TRUE or FALSE!!!\n\nJOB SUMMARY:  {compress_prompt(job_summary)}"
-                if use_open_ai:
-                    job_is_relevant = gpt_true_or_false(prompt,"gpt-3.5-turbo",open_ai_key, 3)
-                else:
-                    job_is_relevant = ollama_true_or_false(prompt)
+                # Use the LLM to generate a summary of the job listing
+                job_summary = gpt_me(prompt,"gpt-3.5-turbo",open_ai_key)
 
                 # Ask the user to determine if the job is a good match with the resume
-                prompt = f"You are a hiring commitee, read the RESUME and JOB SUMMARY below and determine if you would hire the applicant for this job. !!!Reply with a single word, TRUE or FALSE!!!\n\nJOB SUMMARY:  {compress_prompt(bullet_resume)}\n\nJOB SUMMARY:  {compress_prompt(job_summary)}"
-                if use_open_ai:
-                    job_is_a_good_match = gpt_true_or_false(prompt,"gpt-4o", open_ai_key)
-                else:
-                    job_is_a_good_match = ollama_true_or_false(prompt)
+                prompt = f"Read the applicant's RESUME and JOB SUMMARY below and determine if the applicant is a good fit for this job on a scale of 1 to 10. 1 is a bad fit, 10 is a perfect fit.\n\nJOB SUMMARY:  {compress_prompt(bullet_resume)}\n\nJOB SUMMARY:  {compress_prompt(job_summary)}"
+                job_is_a_good_match = gpt_range(prompt,"gpt-4o", open_ai_key)
 
                 # If the job is relevant and a good match, print a success message
-                if job_is_relevant and job_is_a_good_match:
+                if job_is_a_good_match>=5:
                     cprint(f"\n\nJOB FOUND!!! -- {link}\n","green")
-                    job_match = True                 
-
-            if add_job_to_csv: # We'll only add the job to the csv if we've determined it's relevant, meaning it has at least one keyword and the other checks above
-                # Append the results to the output file
                 with open(output_filename, 'a') as file:
-                    file.write(f'{datetime.now().strftime("%m/%d/%Y %I:%M %p")},{job_match},{link},{job_is_relevant},{job_is_a_good_match}\n')
+                    file.write(f'{datetime.now().strftime("%m/%d/%Y %I:%M %p")},{link},{job_is_a_good_match}\n')
 
             # Append the link to the log file, so we know to skip it in the future, and to avoid duplicates
             with open("scanned_sites.log", 'a') as file:
