@@ -37,6 +37,7 @@ from selenium.webdriver.common.action_chains import ActionChains
 from urllib.parse import urljoin
 
 
+
     
 def get_page_body_text(raw_page, full_text=False, debug=False):
     if debug:
@@ -216,7 +217,7 @@ def gpt_me(prompt,model,key, debug=False):
 
 
 
-MAX_TOKENS = 500
+MAX_TOKENS = 450
 
 # Disable parallelism for tokenizers to avoid potential issues
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -347,16 +348,16 @@ def gpt_range(prompt, model, open_ai_key, retries=3, debug=False):
     for _ in range(retries):
         # It sends the prompt to the Ollama API and gets a response
         job_info = gpt_me(prompt, model, open_ai_key, debug)
-        try:
-            job_info = int(job_info)
-        except:
-            if debug:
-                print(f"Prompt: {prompt[:500]}")
-                print(f"gpt reply: {job_info[:500]}")
-                cprint("\tRetrying, didn't get a number...","red")
-            continue
+        job_info = re.sub(r'\D', '', job_info)
+        job_info = int(job_info)
+
+        if debug:
+            print(f"Prompt: {prompt[:500]}")
+            print(f"gpt reply: {job_info[:500]}")
+            cprint("\tRetrying, didn't get a number...","red")
+
         # If the response contains "true", it returns True and "green"
-        if isinstance(job_info, int) and 1 <= job_info <= 10:
+        if 1 <= job_info <= 10:
             return job_info
         # If the response isn't an integer it retries
         # and a message saying it's retrying, then continues to the next iteration of the loop
