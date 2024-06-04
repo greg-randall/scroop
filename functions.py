@@ -6,7 +6,7 @@ import random
 import re
 import time
 import xml.etree.ElementTree as ET
-from urllib.parse import urlparse, quote, unquote
+from urllib.parse import urlparse, quote, unquote, urljoin, urlunparse
 
 # Related third party imports
 from bs4 import BeautifulSoup
@@ -26,7 +26,6 @@ from selenium.webdriver.support.ui import WebDriverWait
 from termcolor import cprint
 from trafilatura import extract
 from transformers import AutoTokenizer
-from urllib.parse import urljoin
 from webdriver_manager.chrome import ChromeDriverManager
 
 # Local application/library specific imports
@@ -146,19 +145,14 @@ def link_cleaner(links, search_sites, debug=False):
     # Loop over each link in the list of links
     for link in links:
 
-
         # Assume that the link should be saved until proven otherwise
         save_link = True
 
         # The link is a tuple, and the actual URL is the first element
         first_value = link[0]
-        
-        # Extract the domain from the link
-        link_domain = urlparse(first_value).netloc
-        
-        # Check if the domain is in the list of search domains
-        # If it is, set save_link to False
-        if link_domain not in search_domains and 'keyword' not in link:
+
+        #check if the string 'keywords=', keeps the search page from being scanned (lots of false positives on good job matches)
+        if 'keywords=' in first_value:
             save_link = False
         
         #some linkedin links are funny forwarders, we'll deal with those here/
@@ -167,22 +161,32 @@ def link_cleaner(links, search_sites, debug=False):
         if 'externalApply'.lower() in first_value.lower():
             # Split the link at "?url="
             parts = first_value.split("?url=")
-
             # Keep only the second half
             second_half = parts[1]
-
             # Run urldecode on the second half
             decoded_url = unquote(second_half)
-
             # Split the decoded URL at "&urlHash="
             decoded_url  = decoded_url.split("&urlHash=")
-            
             # Keep only the first part
             decoded_url  = decoded_url [0]
-
             first_value = decoded_url
             
-            save_link = True
+        # Removing GET arguments from the urls in case they change and don't match the sites we've already scanned
+        # ie asdf.com/page.html?hash=1234 and asdf.com/page.html?hash=5678 would be the same page, but would be scanned twice
+        # Parse the URL and remove the GET arguments
+        parsed_url = urlparse(first_value)
+        first_value = urlunparse((parsed_url.scheme, parsed_url.netloc, parsed_url.path, "", "", ""))
+        
+        # Extract the domain from the link
+        link_domain = urlparse(first_value).netloc
+        
+        # Check if the domain is in the list of search domains
+        # If it is, set save_link to False
+        if link_domain not in search_domains:
+            save_link = False
+
+
+
 
         # If save_link is still True, add the link to the list of clean links
         if save_link:
@@ -402,57 +406,61 @@ def selenium_get_raw_page(page_url, debug=False):
     if debug:
         cprint("selenium_get_raw_page","yellow")
 
-    # Create a UserAgent object
-    ua = UserAgent()
+    try:
+        # Create a UserAgent object
+        ua = UserAgent()
 
-    # Set up Chrome options
-    chrome_options = Options()
-    chrome_options.add_argument(f"user-agent={ua.random}")  # Set the user agent to a random one
-    chrome_options.add_argument("--disable-blink-features=AutomationControlled")  # Disable automation detection
-    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])  # Disable automation detection
-    if not debug:
-        chrome_options.add_argument("--headless")  # Run in headless mode if not in debug mode
+        # Set up Chrome options
+        chrome_options = Options()
+        chrome_options.add_argument(f"user-agent={ua.random}")  # Set the user agent to a random one
+        chrome_options.add_argument("--disable-blink-features=AutomationControlled")  # Disable automation detection
+        chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])  # Disable automation detection
+        if not debug:
+            chrome_options.add_argument("--headless")  # Run in headless mode if not in debug mode
 
-    # Create a WebDriver object
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+        # Create a WebDriver object
+        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
 
-    # Navigate to the page
-    driver.get(url=page_url)
+        # Navigate to the page
+        driver.get(url=page_url)
 
-    # Wait for the page to load
-    time.sleep(5)
+        # Wait for the page to load
+        time.sleep(5)
 
-    for _ in range(20):
-        # Add some random mouse movements
-        action = ActionChains(driver)
-        action.move_by_offset(random.randint(1, 10), random.randint(1, 10))
-        action.perform()
+        for _ in range(20):
+            # Add some random mouse movements
+            action = ActionChains(driver)
+            action.move_by_offset(random.randint(1, 10), random.randint(1, 10))
+            action.perform()
 
-        # Get the page content
-        page_content = get_page_body_text(driver.page_source,True,False)
+            # Get the page content
+            page_content = get_page_body_text(driver.page_source,True,False)
 
-        # If the page content is not found or is too short, wait and try again
-        if page_content == False:
-            continue
-        elif len(page_content)>=250:
-            break
+            # If the page content is not found or is too short, wait and try again
+            if page_content == False:
+                continue
+            elif len(page_content)>=250:
+                break
 
-        time.sleep(1)
+            time.sleep(1)
 
-    # Convert all relative links to absolute
-    soup = BeautifulSoup(driver.page_source, 'html.parser')
-    for a in soup.find_all('a', href=True):
-        a['href'] = urljoin(page_url, a['href'])
+        # Convert all relative links to absolute
+        soup = BeautifulSoup(driver.page_source, 'html.parser')
+        for a in soup.find_all('a', href=True):
+            a['href'] = urljoin(page_url, a['href'])
 
-    # Close the browser
-    driver.quit()
+        # Close the browser
+        driver.quit()
 
-    # Return the page source
-    return str(soup)
+        # Return the page source
+        return str(soup)
+    except:
+        # If an error occurs, return False
+        return False
 
 
 def get_search_links(url,search_sites):
-    page_content = get_page_content(url, 23.5)
+    page_content = get_page_content(url, 8)
 
     # If the page content was successfully fetched
     if page_content:
