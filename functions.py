@@ -27,6 +27,7 @@ from termcolor import cprint
 from trafilatura import extract
 from transformers import AutoTokenizer
 from webdriver_manager.chrome import ChromeDriverManager
+from pprint import pprint
 
 # Local application/library specific imports
 import selenium.webdriver.support.ui as ui
@@ -34,7 +35,8 @@ from selenium.common.exceptions import NoSuchElementException
 import secrets
 
 
-    
+
+
 def get_page_body_text(raw_page, full_text=False, debug=False):
     if debug:
         cprint("get_page_body_text","yellow")
@@ -43,16 +45,11 @@ def get_page_body_text(raw_page, full_text=False, debug=False):
     if not raw_page or not isinstance(raw_page, str):
         return False
 
-    if full_text:
-        soup = BeautifulSoup(raw_page, 'html.parser')
-        # Use the get_text method to extract all the text, stripping away the HTML
-        text = soup.get_text()
-    else:
-        # Extract the main text from the raw page
-        text = extract(raw_page)
+    # Use BeautifulSoup to parse the HTML if full_text is True, otherwise use the extract function
+    text = BeautifulSoup(raw_page, 'html.parser').get_text() if full_text else extract(raw_page)
 
     # If text is None or empty, or not a string, or blank return False
-    if not text or not isinstance(text, str) or text.strip() == "":
+    if not text or not isinstance(text, str) or not text.strip():
         return False
 
     # Strip HTML tags and remove extra linebreaks and whitespace
@@ -65,54 +62,46 @@ def get_page_body_text(raw_page, full_text=False, debug=False):
     return clean_text
 
 
+def get_page_content(url, cache_age=72, debug=False):
+    # Convert cache age to seconds
+    cache_age *= 60 * 60
 
-def get_page_content(url, cache_age=72, debug=False): #default cache age is 72 hours, set to zero or a negative number to always get fresh data
-    cache_age = cache_age * 60 * 60 #convert cache age to seconds
     if debug:
-        cprint("get_page_content","yellow")
-        cprint(f"cache age set to {cache_age} seconds","yellow")
-    # Create a directory called 'cached_pages' if it doesn't exist
-    if not os.path.exists('cached_pages'):
-        os.makedirs('cached_pages')
+        print("get_page_content")
+        print(f"cache age set to {cache_age} seconds")
 
-    # Convert the URL to a filename by dropping non-filename-stuff
+    # Create a directory called 'cached_pages' if it doesn't exist
+    os.makedirs('cached_pages', exist_ok=True)
+
+    # Convert the URL to a filename by hashing it
     filename = hashlib.md5(url.encode()).hexdigest()
 
-    # Check if the file exists in the 'cached_pages' directory
+    # Construct the full file path
     filepath = os.path.join('cached_pages', filename)
-    if os.path.exists(filepath):
+
+    # If the file exists and is not older than the cache age, return its content
+    if os.path.exists(filepath) and (cache_age < 0 or time.time() - os.path.getmtime(filepath) <= cache_age):
         if debug:
-            print(f"\tcache {filepath} exists")
+            print(f"cache {filepath} exists and is younger than {cache_age} seconds, using cached data")
+        with open(filepath, 'r') as file:
+            return file.read()
 
-        if cache_age >= 0:
-            # Get the time the file was last modified
-            file_time = os.path.getmtime(filepath)
-            # Get the current time
-            current_time = time.time()
-            # Calculate the difference in seconds
-            difference = current_time - file_time
-            # If the difference is greater than the cache age, return False
-            if difference > cache_age:
-                if debug:
-                    print(f"\tcache {filepath} is older than {cache_age} seconds, getting fresh data")
-            else:
-                if debug:
-                    print(f"\tcache {filepath} is younger than {cache_age} seconds, using cached data")
-                with open(filepath, 'r') as file:
-                    return file.read()
     if debug:
-        print(f"\tcache {filepath} doesn't exist, collecting")
+        print(f"cache {filepath} doesn't exist or is older than {cache_age} seconds, getting fresh data")
 
+    # Get the raw page content
     output = selenium_get_raw_page(url, debug)
+
+    # If the output is not None or empty, save it to a file and return it
     if output:
-        # Save the output to a file in the 'cached_pages' directory
         with open(filepath, 'w') as file:
             file.write(str(output))
         if debug:
-            cprint(f"writing out data for future cache {filepath}","blue")
+            print(f"writing out data for future cache {filepath}")
         return output
-    return False
 
+    # If the output is None or empty, return False
+    return False
 
 # This function extracts all URLs from the content of a webpage
 def extract_links(page_content, debug=False):
@@ -130,90 +119,63 @@ def extract_links(page_content, debug=False):
     return urls
 
 
-# This function cleans a list of links by removing any that have a domain dont match the search sites (ie link is facebook.com but search site is linkedin.com)
+
+
 def link_cleaner(links, search_sites, debug=False):
-    # If debug mode is on, print a message indicating that the function is running
     if debug:
-        cprint("link_cleaner","yellow")
-    
+        print("link_cleaner")
+
     # Extract the domain from each search site using the urlparse function
-    search_domains = [urlparse(site).netloc for site in search_sites]
-    
+    search_domains = {urlparse(site).netloc for site in search_sites}
+
     # Initialize an empty list to store the clean links
     clean_links = []
-    
+
     # Loop over each link in the list of links
     for link in links:
-
-        # Assume that the link should be saved until proven otherwise
-        save_link = True
-
         # The link is a tuple, and the actual URL is the first element
-        first_value = link[0]
+        url = link[0]
 
-        #check if the string 'keywords=', keeps the search page from being scanned (lots of false positives on good job matches)
-        if 'keywords=' in first_value:
-            save_link = False
-        
-        #some linkedin links are funny forwarders, we'll deal with those here/
-        #for reference thy look like this:
-        # https://www.linkedin.com/jobs/view/externalApply/3908274991?url=https%3A%2F%2Fawe%2Ewd1%2Emyworkdayjobs%2Ecom%2FArt_and_Wellness%2Fjob%2FBentonville-AR%2FTechnical-Services-Librarian\u002d\u002dLibrary-and-Archives_JR960%3Fsource%3DLinkedin&urlHash=2ghE
-        if 'externalApply'.lower() in first_value.lower():
-            # Split the link at "?url="
-            parts = first_value.split("?url=")
-            # Keep only the second half
-            second_half = parts[1]
-            # Run urldecode on the second half
-            decoded_url = unquote(second_half)
-            # Split the decoded URL at "&urlHash="
-            decoded_url  = decoded_url.split("&urlHash=")
-            # Keep only the first part
-            decoded_url  = decoded_url [0]
-            first_value = decoded_url
-            
-        # Removing GET arguments from the urls in case they change and don't match the sites we've already scanned
-        # ie asdf.com/page.html?hash=1234 and asdf.com/page.html?hash=5678 would be the same page, but would be scanned twice
-        # Parse the URL and remove the GET arguments
-        parsed_url = urlparse(first_value)
-        first_value = urlunparse((parsed_url.scheme, parsed_url.netloc, parsed_url.path, "", "", ""))
-        
-        # Extract the domain from the link
-        link_domain = urlparse(first_value).netloc
-        
-        # Check if the domain is in the list of search domains
-        # If it is, set save_link to False
-        if link_domain not in search_domains:
-            save_link = False
+        # Skip links that contain 'keywords='
+        if 'keywords=' in url:
+            continue
+
+        # Handle LinkedIn links that are forwarders
+        if 'externalApply'.lower() in url.lower():
+            # Extract the actual URL from the forwarder
+            url = unquote(url.split("?url=")[1].split("&urlHash=")[0])
+
+        # Remove GET arguments from the URL
+        url = urlunparse(urlparse(url)._replace(query="", fragment=""))
+
+        # Skip links that have a domain that doesn't match the search sites
+        if urlparse(url).netloc not in search_domains:
+            continue
+
+        # Add the cleaned link to the list
+        clean_links.append(url)
+
+    # Remove duplicates and return the cleaned list of links
+    return list(set(clean_links))
 
 
-
-
-        # If save_link is still True, add the link to the list of clean links
-        if save_link:
-            clean_links.append(first_value)
-
-    # Remove any duplicates from the list of clean links
-    clean_links = list(set(clean_links))
-    
-    # Return the list of clean links
-    return clean_links
-
-
-# This function checks if any of the search words appear in the page content
 def find_keywords(page_content, search_words, debug=False):
+    # Convert the page content to lowercase once, to avoid doing it for each word
+    page_content = page_content.lower()
+
     # Loop through each word in the search words
     for word in search_words:
-        # Remove the double quotes from the search word
-        word = word.replace('"', '')
-        
+        # Remove the double quotes from the search word and convert it to lowercase
+        word = word.replace('"', '').lower()
+
         # Check if the search word appears in the page content
-        if word.lower() in page_content.lower():
+        if word in page_content:
             # If the search word is found, and debug mode is on, print a message
             if debug:
                 print(f"\tFound search word '{word}' in page content")
             return True
 
-    # If no search word is found in the page content after checking all the words return False
+    # If no search word is found in the page content after checking all the words, return False
     return False
 
 
@@ -244,177 +206,185 @@ def gpt_me(prompt, model, key, debug=False):
     return chat_completion.choices[0].message.content
 
 
-
-# Code to compress text for making the OpenAI API calls cheaper.
-# The maximum number of tokens for the compression tool is 512, so we'll set it to 450 to be safe.
-# Many of the job descriptions are longer than 512 tokens, so we'll need to split them into smaller chunks. 
-# We'll also disable parallelism for the tokenizers to avoid potential issues.
+# Maximum number of tokens for the compression tool
 MAX_TOKENS = 450
+
 # Disable parallelism for tokenizers to avoid potential issues
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-# Function to compress a buffer of text
-def compress_buffer(llm_lingua, buffer, debug=False):
-    # If debug mode is on, print the number of tokens in the buffer
-    if debug:
-        print(f"Compressing buffer with {len(tokenizer.encode(buffer, truncation=False, max_length=MAX_TOKENS))} tokens")
-    # Compress the buffer using the llm_lingua model
-    compressed = llm_lingua.compress_prompt(buffer, rate=0.5, force_tokens = ['?','.','!'])
-    # Return the compressed text
-    return compressed['compressed_prompt']
+def divide_sentence(sentence, n):
 
-# Function to compress a prompt
+    # Split the sentence at spaces or commas
+    pieces = re.split('[ ,]', sentence)
+
+    # If there are fewer pieces than N
+    if len(pieces) < n:
+        # Return the pieces as they are
+        return pieces
+
+    # If there are at least N pieces
+    else:
+        # Initialize an empty list for the final pieces
+        final_pieces = []
+
+        # Calculate the size of each piece
+        piece_size = len(pieces) // n
+
+        # For each index in the range 0 to N
+        for i in range(n):
+            # If this is the last index
+            if i == n - 1:
+                # Add the remaining pieces to the final pieces
+                final_pieces.append(' '.join(pieces[i * piece_size:]))
+            else:
+                # Add the next piece_size pieces to the final pieces
+                final_pieces.append(' '.join(pieces[i * piece_size:(i + 1) * piece_size]))
+
+        # Return the final pieces
+        return final_pieces
+
 def compress_prompt(text, debug=False):
-    # If debug mode is on, print the number of characters in the text
     if debug:
+        cprint("compress_prompt","yellow")
         print(f"Compressing prompt with {len(text)} characters")
 
-    # helping the sentence splitting, replace some characters with periods
-    text = re.sub(r'\n\n', '. ', text, flags=re.MULTILINE) # replace double linebreaks with a period, since it's a seperate thought
-    text = re.sub(r'^-\n', '.\n', text, flags=re.MULTILINE) # make it so lists that start with a dash are split into seperate sentences
-    text = re.sub(r'\n+', ' ', text, flags=re.MULTILINE) # replace linebreaks with spaces
-    text = re.sub(r'\s+-\s+', ' . ', text, flags=re.MULTILINE) # replace dashes with spaces with periods
-    text = re.sub(r'[:;]', '. ', text, flags=re.MULTILINE) # replace semicolons and colons with periods
-    
+    # Replace certain characters with periods to help sentence splitting
+    text = re.sub(r'\n\n|[:;]', '. ', text, flags=re.MULTILINE)
+    text = re.sub(r'^-\s+', '. ', text, flags=re.MULTILINE)
+    text = re.sub(r'\n+', ' ', text, flags=re.MULTILINE)
+    text = re.sub(r'\s+-\s+', ' . ', text, flags=re.MULTILINE)
 
-    # Initialize the llm_lingua model
+    # Initialize the llm_lingua model and tokenizer
     llm_lingua = PromptCompressor(
         model_name="microsoft/llmlingua-2-xlm-roberta-large-meetingbank",
         use_llmlingua2=True,
     )
-    
-    # Initialize the tokenizer
     tokenizer = AutoTokenizer.from_pretrained("microsoft/llmlingua-2-xlm-roberta-large-meetingbank")
+    llm_lingua.tokenizer = tokenizer
 
     # Split the text into sentences
     sentences = nltk.sent_tokenize(text)
-    
-    # Initialize the compressed text and buffer
-    compressed_text = ""
-    buffer = ""
-    # Loop over the sentences
+
+    sentences_shortened = []
+
     for sentence in sentences:
-        # Check if the sentence itself exceeds MAX_TOKENS
-        if len(tokenizer.encode(sentence, truncation=False, max_length=MAX_TOKENS)) > MAX_TOKENS:
-            
-            mid_index = len(sentence) // 2
-            for i in range(mid_index, len(sentence)):
-                if sentence[i] == ' ':
-                    middle_space =  i
-                if sentence[mid_index - (i - mid_index)] == ' ':
-                    middle_space = mid_index - (i - mid_index)
-            
-            print(f"middle_space: {middle_space}, trying to split:\n\n{sentence}\n")
-            # Split the sentence into two parts at the middle space
-            compressed_text += f"{compress_buffer(llm_lingua, sentence[:middle_space], debug)} {compress_buffer(llm_lingua, sentence[middle_space:], debug)} "
-
-
-        # If adding the sentence to the buffer doesn't exceed the maximum number of tokens
-        elif len(tokenizer.encode(f"{buffer}{sentence}", truncation=False, max_length=MAX_TOKENS)) <= MAX_TOKENS:
-            # If debug mode is on, print the number of tokens in the sentence and the total number of tokens
-            if debug:
-                print(f"Adding sentence with {len(tokenizer.encode(sentence, truncation=False, max_length=MAX_TOKENS))} tokens total = {len(tokenizer.encode(f'{buffer}{sentence}', truncation=False, max_length=MAX_TOKENS))} tokens")
-            # Add the sentence to the buffer
-            buffer += f"{sentence} "
+        if len(tokenizer.encode(sentence, truncation=False)) > MAX_TOKENS:
+            peices = round(len(tokenizer.encode(sentence, truncation=False))/MAX_TOKENS)
+            splits = divide_sentence(sentence, peices)
+            sentences_shortened.extend(splits)
+            print(f"Splitting sentence into {peices} pieces")
         else:
-            # If adding the sentence to the buffer would exceed the maximum number of tokens, compress the buffer and add it to the compressed text
-            compressed_text += f"{compress_buffer(llm_lingua, buffer, debug)} "
-            # Start a new buffer with the current sentence
-            buffer = f"{sentence} "
-    
-    # If there's any text left in the buffer, compress it and add it to the compressed text
-    if buffer:
-        compressed_text += f"{compress_buffer(llm_lingua, buffer, debug)} "
-    
-    # If debug mode is on, print the compressed text
-    if debug:
-        print(compressed_text)
+            sentences_shortened.append(sentence)
+            #print(f"splitting not needed for sentence")
+
+    # Loop over the sentences
+    compressed_text = ""
+    for sentence in sentences_shortened:
+        compressed = llm_lingua.compress_prompt(sentence, rate=0.5, force_tokens = ['?','.','!'])
+        compressed_text += compressed['compressed_prompt'] + ' '
+
+    compressed_text = re.sub(r'\s+', ' ', compressed_text, flags=re.MULTILINE)
+
     # Return the compressed text, removing any trailing whitespace
     return compressed_text.strip()
 
 
-# This function checks if a job is relevant by asking the chatgpt API
+import time
+
 def gpt_true_or_false(prompt, model, open_ai_key, retries=3, debug=False):
     if debug:
         cprint("gpt_true_or_false","yellow")
-
-    if prompt.strip() == "" or prompt == None or prompt == False:
+    # Return None if the prompt is empty or None
+    if not prompt.strip():
         if debug:
-            cprint("\tPrompt is empty or None","red")
+            print("\tPrompt is empty or None")
         return None
-    
-    # It tries up to 'retries' times
+
+    # Try up to 'retries' times
     for i in range(retries):
-        # It sends the prompt to the Ollama API and gets a response
+        # Send the prompt to the Ollama API and get a response
         job_info = gpt_me(prompt, model, open_ai_key, debug)
-        # If the response contains "true", it returns True and "green"
-        if "true" in job_info.lower():
+
+        # Return True if the response contains "true", False if it contains "false"
+        job_info_lower = job_info.lower()
+        if "true" in job_info_lower:
             return True
-        elif "false" in job_info.lower():
+        elif "false" in job_info_lower:
             return False
-        # If the response contains neither "true" nor "false", it prints the first 500 characters of the response
-        # and a message saying it's retrying, then continues to the next iteration of the loop
         else:
+            # If the response contains neither "true" nor "false", print the first 500 characters of the response
+            # and a message saying it's retrying, then continue to the next iteration of the loop
             if debug:
                 print(f"Prompt: {prompt[:500]}")
                 print(f"gpt reply: {job_info[:500]}")
-                cprint("\tRetrying, didn't get True or False...","red")
-        time.sleep(5*i)
-    # If it's tried 'retries' times and still hasn't gotten a clear "true" or "false", it returns None and "red"
+                print("\tRetrying, didn't get True or False...")
+
+        # Sleep for a progressively longer time with each retry
+        time.sleep(5 * i)
+
+    # If it's tried 'retries' times and still hasn't gotten a clear "true" or "false", return None
     return None
 
 
-# This function checks if a job is relevant by asking the chatgpt API
-def gpt_range(prompt, model, open_ai_key, retries=3, debug=False):
-    if debug:
-        cprint("gpt_range","yellow")
 
-    if prompt.strip() == "" or prompt == None or prompt == False:
+def gpt_range(prompt, model, open_ai_key, retries=3, debug=False):
+    # Return None if the prompt is empty or None
+    if not prompt.strip():
         if debug:
-            cprint("\tPrompt is empty or None","red")
+            print("\tPrompt is empty or None")
         return None
-    
-    # It tries up to 'retries' times
+
+    # Try up to 'retries' times
     for i in range(retries):
-        # It sends the prompt to the Ollama API and gets a response
+        # Send the prompt to the Ollama API and get a response
         job_info = gpt_me(prompt, model, open_ai_key, debug)
+
+        # Remove all non-digit characters from the response and convert it to an integer
         job_info = re.sub(r'\D', '', job_info)
-        job_info = int(job_info)
+        job_info = int(job_info) if job_info else None
 
         if debug:
             print(f"Prompt: {prompt[:500]}")
-            print(f"gpt reply: {job_info[:500]}")
-            cprint("\tRetrying, didn't get a number...","red")
+            print(f"gpt reply: {job_info}")
 
-        # If the response contains "true", it returns True and "green"
+        # If the response is a number between 1 and 10, return it
         if 1 <= job_info <= 10:
             return job_info
-        # If the response isn't an integer it retries
-        # and a message saying it's retrying, then continues to the next iteration of the loop
         else:
+            # If the response isn't a number between 1 and 10, print a message saying it's retrying,
+            # then continue to the next iteration of the loop
             if debug:
-                print(f"Prompt: {prompt[:500]}")
-                print(f"gpt reply: {job_info[:500]}")
-                cprint("\tRetrying, didn't get True or False...","red")
-        time.sleep(5*i)
-    # If it's tried 'retries' times and still hasn't gotten a clear "true" or "false", it returns None and "red"
+                print("\tRetrying, didn't get a number between 1 and 10...")
+
+        # Sleep for a progressively longer time with each retry
+        time.sleep(5 * i)
+
+    # If it's tried 'retries' times and still hasn't gotten a number between 1 and 10, return None
     return None
 
 
 def selenium_get_raw_page(page_url, debug=False):
     # If debug mode is on, print a message
     if debug:
-        cprint("selenium_get_raw_page","yellow")
+        print("selenium_get_raw_page")
 
     try:
         # Create a UserAgent object
         ua = UserAgent()
+
+        # List of possible screen sizes
+        screen_sizes = ["1024x768", "1280x800", "1366x768", "1440x900", "1920x1080", "3840x2160"]
+        # Choose a random screen size from the list
+        screen_size = random.choice(screen_sizes)
+        # Set the window size to the chosen screen size
 
         # Set up Chrome options
         chrome_options = Options()
         chrome_options.add_argument(f"user-agent={ua.random}")  # Set the user agent to a random one
         chrome_options.add_argument("--disable-blink-features=AutomationControlled")  # Disable automation detection
         chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])  # Disable automation detection
+        chrome_options.add_argument(f"--window-size={screen_size}")
+
         if not debug:
             chrome_options.add_argument("--headless")  # Run in headless mode if not in debug mode
 
@@ -454,70 +424,83 @@ def selenium_get_raw_page(page_url, debug=False):
 
         # Return the page source
         return str(soup)
-    except:
-        # If an error occurs, return False
+    except Exception as e:
+        # If an error occurs, print the error and return False
+        print(f"An error occurred: {e}")
         return False
 
-
-def get_search_links(url,search_sites):
+def get_search_links(url, search_sites):
+    # Fetch the page content
     page_content = get_page_content(url, 8)
 
     # If the page content was successfully fetched
     if page_content:
-        # Extract the links from the page content and add them to the list of links
+        # Extract the links from the page content
         fresh_links = extract_links(page_content)
+
         # Clean the extracted links by making sure they contain the search site URL and removing duplicates
         fresh_links = link_cleaner(fresh_links, search_sites)
-        # Extend the list of links with the fresh links
-        return(fresh_links)
-    else:
-        return([])
+
+        # Return the cleaned links
+        return fresh_links
+
+    # If the page content could not be fetched, return an empty list
+    return []
 
 def process_link(link, search_words):
-    page_content_raw = get_page_content(link, 720) # keep reusing cached pages for 30 days (720 hours = 30 days)
+    # Fetch the page content and cache it for 30 days (720 hours = 30 days)
+    page_content_raw = get_page_content(link, 720)
+
+    # Extract the body text from the page content
     page_content = get_page_body_text(page_content_raw)
 
-    # If there is page content
+    # If there is body text
     if page_content:
-        #make sure at least one of our keywords is in the page content
+        # Check if any of the search words are in the body text
         found_word = find_keywords(page_content, search_words)
+
+        # If a search word was not found
         if not found_word:
+            # Log the link
             with open("scanned_sites.log", 'a') as file:
                 file.write(f"{link}\n")
             return 1
     return 0
 
-def generate_gpt_summary(link, open_ai_key, debug=False):
-    if debug:
-        cprint("generate_gpt_summary","yellow")
 
-    page_content_raw = get_page_content(link, 720) # keep reusing cached pages for 30 days (720 hours = 30 days)
+def generate_gpt_summary(link, open_ai_key, debug=False):
+    # Fetch the page content and cache it for 30 days (720 hours = 30 days)
+    page_content_raw = get_page_content(link, 720)
+
     # Extract the body text from the page content
     page_content = get_page_body_text(page_content_raw)
-    
 
-    # If there is page content
-    if page_content and len(page_content)>=50:
-        if debug:
-            print(f"page_content: {page_content[:250]}")
-
+    # If there is page content and it's at least 50 characters long
+    if page_content and len(page_content) >= 50:
+        # Generate the filename for the summary file
         filename = f"{hashlib.md5(link.encode()).hexdigest()}_summary.txt"
         filepath = os.path.join('cached_pages', filename)
-        if debug:
-            print(filepath)
+
+        # If the summary file doesn't exist
         if not os.path.exists(filepath):
-            # Use the LLM to generate a summary of the job listing
-            prompt = f"Please read this job listing and write a consise summary of required skills, degrees, etc:\n\n{compress_prompt(page_content)}"
-            job_summary = gpt_me(prompt,"gpt-3.5-turbo",open_ai_key,debug)
+            # Generate a summary of the page content using the GPT-3.5-turbo model
+            prompt = f"Please read this job listing and write a concise summary of required skills, degrees, etc:\n\n{compress_prompt(page_content)}"
+            job_summary = gpt_me(prompt, "gpt-3.5-turbo", open_ai_key, debug)
+
+            # Save the summary to the file
             with open(filepath, 'w') as file:
                 file.write(job_summary)
         else:
+            # If the summary file exists, read the summary from the file
             with open(filepath, 'r') as file:
                 job_summary = file.read()
-                
+
+        # Return the summary
         return job_summary
-    
+
+    # If there is no page content or it's less than 50 characters long, return False
     return False
+
 
 def generate_gpt_job_match(link, bullet_resume, open_ai_key, debug=False):
     if debug:
