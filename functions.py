@@ -11,6 +11,7 @@ from urllib.parse import urlparse, quote, unquote, urljoin, urlunparse
 # Related third party imports
 from bs4 import BeautifulSoup
 from fake_useragent import UserAgent
+from html import unescape
 from llmlingua import PromptCompressor
 import nltk
 from nltk import download
@@ -108,6 +109,8 @@ def extract_links(page_content, debug=False):
     # If debug mode is on, print the function name
     if debug:
         cprint("extract_links","yellow")
+
+    page_content = unescape(page_content)
     
     # This is a regular expression (regex) that matches URLs
     url_regex = r"(?i)\b((?:https?://|www\d{0,3}[.]|[a-z0-9.\-]+[.][a-z]{2,4}/)(?:[^\s()<>]+|\(([^\s()<>]+|(\([^\s()<>]+\)))*\))+(?:\(([^\s()<>]+|(\([^\s()<>]+\)))*\)|[^\s`!()\[\]{};:'\".,<>?«»“”‘’]))"
@@ -125,6 +128,8 @@ def link_cleaner(links, search_sites, debug=False):
     if debug:
         print("link_cleaner")
 
+    extensions = ['js', 'jpg', 'jpeg', 'png', 'gif', 'html', 'css', 'svg', 'pdf', 'mp4', 'mp3', 'json', 'xml', 'ico', 'webp' ]
+
     # Extract the domain from each search site using the urlparse function
     search_domains = {urlparse(site).netloc for site in search_sites}
 
@@ -137,7 +142,16 @@ def link_cleaner(links, search_sites, debug=False):
         url = link[0]
 
         # Skip links that contain 'keywords='
-        if 'keywords=' in url:
+        if 'keywords=' in url.lower() or 'academiccareers.com/ajax' in url.lower():
+            continue
+
+        # Skip links that end with one of the extensions
+        skip_link = False
+        for ext in extensions:
+            if url.endswith('.' + ext):
+                skip_link = True
+                break
+        if skip_link:
             continue
 
         # Handle LinkedIn links that are forwarders
@@ -184,26 +198,31 @@ def gpt_me(prompt, model, key, debug=False):
     if debug:
         cprint("gpt_me", "yellow")
 
-    # Initialize the OpenAI client with the provided API key
-    client = OpenAI(api_key=key)
+    try:
+        # Initialize the OpenAI client with the provided API key
+        client = OpenAI(api_key=key)
 
-    # Create a chat completion with the OpenAI API using the provided prompt and model
-    chat_completion = client.chat.completions.create(
-        messages=[
-            {
-                "role": "user",
-                "content": prompt,
-            }
-        ],
-        model=model,
-    )
+        # Create a chat completion with the OpenAI API using the provided prompt and model
+        chat_completion = client.chat.completions.create(
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt,
+                }
+            ],
+            model=model,
+        )
 
-    # If debug mode is on, print the first 250 characters of the response
-    if debug:
-        print(chat_completion.choices[0].message.content[:250])
+        # If debug mode is on, print the first 250 characters of the response
+        if debug:
+            print(chat_completion.choices[0].message.content[:250])
 
-    # Return the full response
-    return chat_completion.choices[0].message.content
+        # Return the full response
+        return chat_completion.choices[0].message.content
+    except Exception as e:
+        # If an error occurs, print the error and return an empty string
+        print(f"A ChatGPT error occurred: {e}\n\t{prompt}\n\n\n\n")
+        return False
 
 
 # Maximum number of tokens for the compression tool
@@ -476,6 +495,10 @@ def generate_gpt_summary(link, open_ai_key, debug=False):
     # Extract the body text from the page content
     page_content = get_page_body_text(page_content_raw)
 
+    if page_content==False:
+        print(f"page content is false for {link}")
+        return False
+
     # If there is page content and it's at least 50 characters long
     if page_content and len(page_content) >= 50:
         # Generate the filename for the summary file
@@ -488,9 +511,13 @@ def generate_gpt_summary(link, open_ai_key, debug=False):
             prompt = f"Please read this job listing and write a concise summary of required skills, degrees, etc:\n\n{compress_prompt(page_content)}"
             job_summary = gpt_me(prompt, "gpt-3.5-turbo", open_ai_key, debug)
 
-            # Save the summary to the file
-            with open(filepath, 'w') as file:
-                file.write(job_summary)
+            if job_summary==False:
+                print(f"Error: job summary is false for {link}")
+                return False
+            else:
+                # Save the summary to the file
+                with open(filepath, 'w') as file:
+                    file.write(job_summary)
         else:
             # If the summary file exists, read the summary from the file
             with open(filepath, 'r') as file:

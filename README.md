@@ -1,6 +1,6 @@
 # Job Search Automation with OpenAi
 
-Scroop automates the job search process by scraping job listings from various websites and filtering them based on user-defined keywords. It then uses OpenAi to determine the relevance of each job to the keywords and to your resume.
+Scroop automates the job search process by scraping job listings from various websites and filtering them based on user-defined keywords. It then uses OpenAi to determine the relevance of each job to your resume. Finally it outputs a CSV file sorted by how well the job matches your resume. 
 
 ## Installation
 
@@ -18,7 +18,7 @@ Scroop automates the job search process by scraping job listings from various we
 
 You can run the project by executing the main Python script in your terminal. 
 
-I'm running on Windows Subsystem for Linux 2 (WSL2), seems to work well.
+I'm running on Windows Subsystem for Linux 2 (WSL2) with no issues.
 
 ## Notes
 
@@ -26,4 +26,4 @@ You can add other search sites to `config.py`, make sure to format them like "ht
 
 No attempt is made to go to the next page on any of the search sites, with the idea that the code would be run once a day to get new jobs.
 
-Also, the scrape on these pages is very generic looking for links, and then later relying on the LLM to determine if a link is a valid job listing.
+Also, the scrape on these pages is very generic looking for links, and then later relying on the LLM to determine if a link is a valid job listing. There's a small amount of filtering to remove bogus links, but mostly the code errs on the side of scanning an extra link or two.
