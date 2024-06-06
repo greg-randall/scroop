@@ -244,6 +244,7 @@ def divide_sentence(sentence, n):
         return final_pieces
 
 def compress_prompt(text, debug=False):
+    return text
     if debug:
         cprint("compress_prompt","yellow")
         print(f"Compressing prompt with {len(text)} characters")
@@ -426,7 +427,7 @@ def selenium_get_raw_page(page_url, debug=False):
         return str(soup)
     except Exception as e:
         # If an error occurs, print the error and return False
-        print(f"An error occurred: {e}")
+        print(f"An error occurred: {e}\n\t{page_url}")
         return False
 
 def get_search_links(url, search_sites):
@@ -504,52 +505,33 @@ def generate_gpt_summary(link, open_ai_key, debug=False):
 
 def generate_gpt_job_match(link, bullet_resume, open_ai_key, debug=False):
     if debug:
-        random_number = secrets.randbelow(999) + 1
-        debug_timestamp = time.time()
-
         cprint("generate_gpt_job_match","yellow")
 
     filename = f"{hashlib.md5(link.encode()).hexdigest()}_summary.txt"
     filepath = os.path.join('cached_pages', filename)
 
-    if debug:
-        print(f"{random_number} - {round(time.time()-debug_timestamp,1)} -- hash and filepath")
-        debug_timestamp = time.time()
     if not os.path.exists(filepath):
         return False
     else:
         with open(filepath, 'r') as file:
             job_summary = file.read()
-    if debug:        
-        print(f"{random_number} - {round(time.time()-debug_timestamp,1)} -- read job summary")
-        debug_timestamp = time.time()
-    if len(job_summary) >=50:
+    if len(job_summary) >=25:
         filename = f"{hashlib.md5(link.encode()).hexdigest()}_rating.txt"
         filepath = os.path.join('cached_pages', filename)
-        if debug:
-            print(f"{random_number} - {round(time.time()-debug_timestamp,1)} -- hash and filepath 2")
-            debug_timestamp = time.time()
+
         if not os.path.exists(filepath):
             # Use the LLM to generate a summary of the job listing
             prompt = f"Read the applicant's RESUME and JOB SUMMARY below and determine if the applicant is a good fit for this job on a scale of 1 to 10. 1 is a bad fit, 10 is a perfect fit. REPLY WITH AN INTEGER 1-10!!!\n\nJOB SUMMARY:  {compress_prompt(bullet_resume)}\n\nJOB SUMMARY:  {compress_prompt(job_summary)}"
             job_is_a_good_match = gpt_range(prompt,"gpt-4o", open_ai_key,True)
             with open(filepath, 'w') as file:
                 file.write(str(job_is_a_good_match))
-            if debug:    
-                print(f"{random_number} - {round(time.time()-debug_timestamp,1)} -- gpt and write job match")
-                debug_timestamp = time.time()
+
         else:
             with open(filepath, 'r') as file:
                 job_is_a_good_match = file.read()
-            if debug:
-                print(f"{random_number} - {round(time.time()-debug_timestamp,1)} -- read job match cache")
-                debug_timestamp = time.time()
-        if debug:
-            print(f"{random_number} - {round(time.time()-debug_timestamp,1)} -- returning job match\n\n\n\n\n")
-            debug_timestamp = time.time()
+
+
         return job_is_a_good_match
-    if debug:
-        print(f"{random_number} - {round(time.time()-debug_timestamp,1)} -- returning False\n\n\n\n\n")
-        debug_timestamp = time.time()
+
     
     return False

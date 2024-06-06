@@ -1,6 +1,6 @@
 open_ai_key = ""
 
-
+threads = 16
 
 search_sites = [ 
     "https://jobs.chronicle.com/jobsrss/?countrycode=US&keywords=",

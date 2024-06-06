@@ -13,6 +13,7 @@ from urllib.parse import quote
 from concurrent.futures import ThreadPoolExecutor
 import itertools
 from operator import itemgetter
+import shutil
 import csv
 
 from termcolor import cprint
@@ -54,7 +55,7 @@ random.shuffle(site_search_list)
 print("Getting Searches in parallel...")
 
 # Get the search links from the search sites
-with ThreadPoolExecutor(max_workers=8) as executor:
+with ThreadPoolExecutor(max_workers=threads) as executor:
     links = list(tqdm(executor.map(get_search_links, site_search_list, itertools.repeat(search_sites, len(site_search_list))), total=len(site_search_list)))
 
 # Flatten the list of lists of links into a single list of links
@@ -92,7 +93,7 @@ if debug:
     links = random.sample(links, 10)
 
 print("Make Sure Pages are Cached & Remove Pages without Keywords...")
-with ThreadPoolExecutor(max_workers=8) as executor:
+with ThreadPoolExecutor(max_workers=threads) as executor:
     skipped = sum(tqdm(executor.map(process_link, links, itertools.repeat(search_words, len(links))), total=len(links)))
 
 # Read the file 'scanned_sites.log' into a set for faster lookup
@@ -114,7 +115,7 @@ print(f"Links Remaining after Pages without Keywords removed: {len(links)}")
 print("\nGenerating GPT Summaries of Jobs...")
 
 random.shuffle(links)
-with ThreadPoolExecutor(max_workers=8) as executor:
+with ThreadPoolExecutor(max_workers=threads) as executor:
     list(tqdm(executor.map(generate_gpt_summary, links, itertools.repeat(open_ai_key, len(links))), total=len(links)))
 
 
@@ -126,7 +127,7 @@ with ThreadPoolExecutor(max_workers=8) as executor:
 print("\nGenerating Job Match Number...")
 random.shuffle(links)
 
-with ThreadPoolExecutor(max_workers=8) as executor:
+with ThreadPoolExecutor(max_workers=threads) as executor:
     results = list(tqdm(executor.map(generate_gpt_job_match, links, [bullet_resume]*len(links), [open_ai_key]*len(links)), total=len(links)))
 
  
@@ -152,8 +153,14 @@ for i, link in enumerate(links, start=1):
         with open(filepath, 'r') as file:
             job_match = file.read()
 
+        job_match = int(job_match.strip())
+
         # Print the current link and its job match rating
-        print(f"{i}/{len(links)}: {link} - {job_match}")
+        progress_list = f"{i}/{len(links)}: {link} - {job_match}"
+        if job_match >= 6:
+            cprint(progress_list, 'green')
+        else:
+            print(progress_list)
 
         # Append the timestamp, link, and job match rating to the output data
         output_data.append([datetime.now().strftime("%m-%d-%Y_%I-%M-%p"), job_match, link])
@@ -161,13 +168,13 @@ for i, link in enumerate(links, start=1):
         # Append the link to the scanned sites log file
         with open('scanned_sites.log', 'a') as file:
             file.write(f"{link}\n")
-    except:
+    except Exception as e:
         # In case something went wrong we're going to drop the link from the sites 
         # log as well as remove the content from the cache, in the hopes that it goes 
         # right the next time around
 
         # If an error occurs, print the link in red
-        cprint(f"Error: {link}", 'red')
+        cprint(f"Error: {e}\n\t{link}", 'red')
         
         # Remove the link from the scanned sites log file, so we'll try again next time
         with open('scanned_sites.log', 'r') as file:
@@ -185,11 +192,20 @@ for i, link in enumerate(links, start=1):
         for file in files:
             # If the filename_hash is in the file name
             if filename_hash in file:
+                # Check if the 'cached_pages/removed' directory exists, create it if it doesn't
+                removed_dir = 'cached_pages/removed'
+                if not os.path.exists(removed_dir):
+                    os.makedirs(removed_dir)
                 # Construct the full file path
                 file_path = os.path.join('cached_pages', file)
-                # Remove the file
-                os.remove(file_path)
-                print(f"\tRemoved cached file - {file_path}")
+
+                # Construct the destination path
+                dest_path = os.path.join(removed_dir, file)
+
+                # Move the file
+                shutil.move(file_path, dest_path)
+
+                print(f"\tMoved cached file to - {dest_path}")
 
 
 # Sort the output data by the job match rating highest to lowest
