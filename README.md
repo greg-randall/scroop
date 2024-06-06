@@ -26,4 +26,4 @@ You can add other search sites to `config.py`, make sure to format them like "ht
 
 No attempt is made to go to the next page on any of the search sites, with the idea that the code would be run once a day to get new jobs.
 
-Also, the scrape on these pages is very generic looking for links, and then later relying on the LLM to determine if a link is a valid job listing. There's a small amount of filtering to remove bogus links, but mostly the code errs on the side of scanning an extra link or two.
+The search page scrape on these pages is using a regex to extract links since. There's a small amount of filtering to remove bogus links, but mostly the code errs on the side of scanning an extra link or two.
