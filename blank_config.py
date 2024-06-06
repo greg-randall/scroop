@@ -3,12 +3,14 @@ open_ai_key = ""
 threads = 16
 
 search_sites = [ 
-    "https://jobs.chronicle.com/jobsrss/?countrycode=US&keywords=",
-    "https://careers.insidehighered.com/jobsrss/?countrycode=US&keywords=",
-    "https://www.timeshighereducation.com/unijobs/jobsrss/?keywords=",
-    "https://main.hercjobs.org/jobs/?display=rss&keywords=",
-    "https://www.linkedin.com/jobs/search/?keywords=",
+    'https://jobs.chronicle.com/jobsrss/?countrycode=US&keywords=',
+    'https://careers.insidehighered.com/jobsrss/?countrycode=US&keywords=',
+    'https://www.timeshighereducation.com/unijobs/jobsrss/?keywords=',
+    'https://main.hercjobs.org/jobs/?display=rss&keywords=',
+    'https://www.linkedin.com/jobs/search/?keywords=',
+    'https://academiccareers.com/rss/?q=',
 ]
+
 
 
 
