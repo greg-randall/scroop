@@ -6,3 +6,5 @@ __pycache__/*
 cached_pages/*
 *.sh
 old*
+*.txt
+

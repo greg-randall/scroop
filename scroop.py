@@ -30,8 +30,11 @@ debug = False
 
 
 
-# Define the output filename
-output_filename = "job_search_" + datetime.now().strftime('%m-%d-%Y_%I-%M-%p') + ".csv"
+# Define the output filenames
+timestamp = datetime.now().strftime('%m-%d-%Y_%I-%M-%p')
+output_csv_filename = f"job_search_{timestamp}.csv"
+output_summary_filename = f"job_match_summaries_{timestamp}.txt"
+
 
 # The log file is used to keep track of which sites have been scanned, Create the log file if it doesn't exist
 with open("scanned_sites.log", 'a') as _:
@@ -139,7 +142,8 @@ print("\nGenerating Results...")
 
 
 # Initialize an empty list to store the output data
-output_data = []
+output_csv = []
+output_summary = []
 
 # Iterate over each link in the list of links
 for i, link in enumerate(links, start=1):
@@ -157,13 +161,27 @@ for i, link in enumerate(links, start=1):
 
         # Print the current link and its job match rating
         progress_list = f"{i}/{len(links)}: {link} - {job_match}"
-        if job_match >= 6:
+        if job_match >= 7:
             cprint(progress_list, 'green')
+
+            summary_string_temp = ""
+            # Write the job match, job URL, and job description to the file
+            summary_string_temp += f"{job_match} -- {link}\n"
+            # Read the summary from the summary file
+            filename = f"{hashlib.md5(link.encode()).hexdigest()}_summary.txt"
+            filepath = os.path.join('cached_pages', filename)
+            with open(filepath, 'r') as summary_file:
+                summary = summary_file.read()
+
+            summary_string_temp +=f"Job Description:\n{summary}\n\n\n\n"
+
+            output_summary.append(summary_string_temp)
+
         else:
             print(progress_list)
 
         # Append the timestamp, link, and job match rating to the output data
-        output_data.append([datetime.now().strftime("%m-%d-%Y_%I-%M-%p"), job_match, link])
+        output_csv.append([datetime.now().strftime("%m-%d-%Y_%I-%M-%p"), job_match, link])
 
         # Append the link to the scanned sites log file
         with open('scanned_sites.log', 'a') as file:
@@ -209,11 +227,18 @@ for i, link in enumerate(links, start=1):
 
 
 # Sort the output data by the job match rating highest to lowest
-output_data.sort(key=itemgetter(1), reverse=True)
 
-if len(output_data)>0: # Only write the output data to a CSV file if there is data to write
+
+if len(output_csv)>0: # Only write the output data to a CSV file if there is data to write
+    output_csv.sort(key=itemgetter(1), reverse=True)
     # Write the output data to the CSV file
-    with open(output_filename, 'w', newline='') as file:
+    with open(output_csv_filename, 'w', newline='') as file:
         writer = csv.writer(file)
         writer.writerow(['Timestamp','Job Match Rating', 'Link'])  # Write the header
-        writer.writerows(output_data)  # Write the data
+        writer.writerows(output_csv)  # Write the data
+
+if len(output_summary)>0: # Only write the output data to a file if there is data to write
+    output_summary.sort(reverse=True)    
+    # Write the output data to the file
+    with open(output_summary_filename, 'w', newline='') as file:
+        file.writelines(output_summary)
