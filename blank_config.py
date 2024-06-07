@@ -14,7 +14,9 @@ search_sites = [
     'https://www.higheredjobs.com/search/advanced_action.cfm?Keyword=',
     'https://academicpositions.com/find-jobs?search=',
     'https://academicjobsonline.org/ajo?action=joblist&args=-0-0-&send=Go&id=',
-    'https://finearts.academickeys.com/seeker_search.php?q=' #this site has several other categories -- see this page for a list https://www.academickeys.com/all/choose_discipline.php. seems like you just swap the subdomain from 'finearts' to 'law'.
+    'https://finearts.academickeys.com/seeker_search.php?q=', #this site has several other categories -- see this page for a list https://www.academickeys.com/all/choose_discipline.php. seems like you just swap the subdomain from 'finearts' to 'law'.
+    'https://diversejobs.net/search?location=&page=1&radius_mi=50000&experience=&keyword=',
+    'https://www.academicgates.com/job/find-jobs?sortby=latest&kw='
 ]
 
 
