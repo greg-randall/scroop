@@ -107,73 +107,53 @@ def get_page_content(url, cache_age=72, debug=False):
     # If the output is None or empty, return False
     return False
 
-# This function extracts all URLs from the content of a webpage
-def extract_links(page_content, debug=False):
-    #debug = True
-    # If debug mode is on, print the function name
-    if debug:
-        cprint("extract_links","yellow")
+from bs4 import BeautifulSoup
+from urllib.parse import urlparse
+import re
 
-    if debug:
-       print("Link extraction starting")
+def extract_links(page_content: str, debug: bool = False) -> list:
 
-    # Initialize an empty list to store the URLs
-    urls = []
-
+    # Parse the HTML content with Beautiful Soup
     soup = BeautifulSoup(page_content, 'html.parser')
-    # Find all 'a' tags and extract the 'href' attribute
-    for a_tag in soup.find_all('a'):
-        href = a_tag.get('href')
-        if href is not None:
-            urls.append(href)
+
+    # Use a list comprehension to extract all href attributes from 'a' tags
+    # The 'if href' condition filters out any 'None' values
+    urls = [a_tag.get('href') for a_tag in soup.find_all('a') if (href := a_tag.get('href'))]
+
+    # Print the number of links found if debug mode is on
     if debug:
-        print(f"Found {len(urls)} links")
-    hrefs_found = len(urls)
+        print(f"Found {len(urls)} href links")
 
-    # some of the pages we get are actually xml, but we are using a browser to get them, to avoid detection,
-    # so we need to extract the links from the xml which is wrapped in html tags
-    page_content = unescape(page_content) # Unescape HTML entities
+    # Unescape HTML entities
+    page_content = re.sub('&amp;', '&', page_content)
 
-    page_content = re.sub('\n', ' ', page_content) # remove linebreaks
+    # Remove linebreaks and existing tildes
+    page_content = re.sub('\n|~', ' ', page_content)
 
-    page_content = page_content.replace('~', '') # we are going to denote the content we want with tildes so we'll remove any that exist
+    # Add a newline and a tilde before each opening link tag and a newline after each closing link tag
+    page_content = re.sub('<link>', '\n~<link>', page_content)
+    page_content = re.sub('</link>', '</link>\n', page_content)
 
-    #we want to get each link on a line by itself so that we can easily extract them
-    page_content = page_content.replace('<link>', '\n~<link>') # add a newline then a tilde before each opening link tag
-    page_content = page_content.replace('</link>', '</link>\n') # add a newline after each closing link tag
-
-    # remove all the html tags
+    # Remove all the HTML tags
     soup = BeautifulSoup(page_content, 'html.parser')
     page_content = soup.get_text()
 
+    # Remove leading whitespace, lines that don't start with a tilde, lines that are only a single character, and extra newlines
+    page_content = re.sub('^\s+|^[^~].+|^.$|\n+', '', page_content)
 
-    page_content = re.sub('^\s+', '', page_content) # remove leading whitespace
-    page_content = re.sub('^[^~].+', '', page_content) # remove any lines that don't start with a tilde
-    page_content = re.sub('^.$', '', page_content) # remove any lines that are only a single character
-    page_content = re.sub('\n+', '\n', page_content) # remove any doubled up extra newlines
-    page_content = page_content.replace('~', '') # remove the tildes
+    # Remove the tildes
+    page_content = re.sub('~', '', page_content)
 
-    #this should leave us with a list of links, one on each line possibly with some whitespace
+    # Split the page content into lines and strip any whitespace
+    lines = [line.strip() for line in page_content.split('\n')]
 
-    # Split the page content into lines
-    lines = page_content.split('\n')
+    # Use a list comprehension to parse each line as a URL and add it to the list if it's a valid URL
+    urls += [line for line in lines if urlparse(line).scheme and urlparse(line).netloc]
 
-    # Check each line
-    for line in lines:
-        line = line.strip() #in case there's any whitespace
-
-        # Parse the line as a URL
-        parsed = urlparse(line)
-        
-        # If the line is a valid URL, add it to the list
-        if parsed.scheme and parsed.netloc:
-            urls.append(line)
-
+    # Print the number of link tags found if debug mode is on
     if debug:
-        print(f"Found {len(urls)-hrefs_found} link tags")
+        print(f"Found {len(urls) - len(lines)} link tags")
 
-    #print(f"Found {hrefs_found} hrefs, and {len(urls)-hrefs_found} link tags")
-    
     # Return the list of URLs
     return urls
 
