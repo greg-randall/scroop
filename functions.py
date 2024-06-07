@@ -8,6 +8,7 @@ import time
 import xml.etree.ElementTree as ET
 from urllib.parse import urlparse, quote, unquote, urljoin, urlunparse
 
+
 # Related third party imports
 from bs4 import BeautifulSoup
 from fake_useragent import UserAgent
@@ -24,11 +25,13 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
 from termcolor import cprint
 from trafilatura import extract
 from transformers import AutoTokenizer
 from webdriver_manager.chrome import ChromeDriverManager
 from pprint import pprint
+
 
 # Local application/library specific imports
 import selenium.webdriver.support.ui as ui
@@ -106,18 +109,71 @@ def get_page_content(url, cache_age=72, debug=False):
 
 # This function extracts all URLs from the content of a webpage
 def extract_links(page_content, debug=False):
+    #debug = True
     # If debug mode is on, print the function name
     if debug:
         cprint("extract_links","yellow")
 
-    page_content = unescape(page_content)
+    if debug:
+       print("Link extraction starting")
+
+    # Initialize an empty list to store the URLs
+    urls = []
+
+    soup = BeautifulSoup(page_content, 'html.parser')
+    # Find all 'a' tags and extract the 'href' attribute
+    for a_tag in soup.find_all('a'):
+        href = a_tag.get('href')
+        if href is not None:
+            urls.append(href)
+    if debug:
+        print(f"Found {len(urls)} links")
+    hrefs_found = len(urls)
+
+    # some of the pages we get are actually xml, but we are using a browser to get them, to avoid detection,
+    # so we need to extract the links from the xml which is wrapped in html tags
+    page_content = unescape(page_content) # Unescape HTML entities
+
+    page_content = re.sub('\n', ' ', page_content) # remove linebreaks
+
+    page_content = page_content.replace('~', '') # we are going to denote the content we want with tildes so we'll remove any that exist
+
+    #we want to get each link on a line by itself so that we can easily extract them
+    page_content = page_content.replace('<link>', '\n~<link>') # add a newline then a tilde before each opening link tag
+    page_content = page_content.replace('</link>', '</link>\n') # add a newline after each closing link tag
+
+    # remove all the html tags
+    soup = BeautifulSoup(page_content, 'html.parser')
+    page_content = soup.get_text()
+
+
+    page_content = re.sub('^\s+', '', page_content) # remove leading whitespace
+    page_content = re.sub('^[^~].+', '', page_content) # remove any lines that don't start with a tilde
+    page_content = re.sub('^.$', '', page_content) # remove any lines that are only a single character
+    page_content = re.sub('\n+', '\n', page_content) # remove any doubled up extra newlines
+    page_content = page_content.replace('~', '') # remove the tildes
+
+    #this should leave us with a list of links, one on each line possibly with some whitespace
+
+    # Split the page content into lines
+    lines = page_content.split('\n')
+
+    # Check each line
+    for line in lines:
+        line = line.strip() #in case there's any whitespace
+
+        # Parse the line as a URL
+        parsed = urlparse(line)
+        
+        # If the line is a valid URL, add it to the list
+        if parsed.scheme and parsed.netloc:
+            urls.append(line)
+
+    if debug:
+        print(f"Found {len(urls)-hrefs_found} link tags")
+
+    #print(f"Found {hrefs_found} hrefs, and {len(urls)-hrefs_found} link tags")
     
-    # This is a regular expression (regex) that matches URLs
-    url_regex = r"(?i)\b((?:https?://|www\d{0,3}[.]|[a-z0-9.\-]+[.][a-z]{2,4}/)(?:[^\s()<>]+|\(([^\s()<>]+|(\([^\s()<>]+\)))*\))+(?:\(([^\s()<>]+|(\([^\s()<>]+\)))*\)|[^\s`!()\[\]{};:'\".,<>?«»“”‘’]))"
-
-    # Use the regex to find all URLs in the page content
-    urls = re.findall(url_regex, page_content)
-
     # Return the list of URLs
     return urls
 
@@ -137,9 +193,14 @@ def link_cleaner(links, search_sites, debug=False):
     clean_links = []
 
     # Loop over each link in the list of links
-    for link in links:
+    for url in links:
+
+        url = url.strip()
+
+        url = url.replace('http://', 'https://')
+
         # The link is a tuple, and the actual URL is the first element
-        url = link[0]
+        #url = link[0]
 
         # Skip links that contain 'keywords='
         if 'keywords=' in url.lower() or 'academiccareers.com/ajax' in url.lower():
@@ -176,6 +237,14 @@ def link_cleaner(links, search_sites, debug=False):
 def find_keywords(page_content, search_words, debug=False):
     # Convert the page content to lowercase once, to avoid doing it for each word
     page_content = page_content.lower()
+
+    removal_words = ['facebook']
+
+    # Remove the removal words from the page content.
+    # In case there are collsions between parts of the searchwords, ie searching for "book" but the page contains "facebook"
+    for word in removal_words:
+        page_content = page_content.replace(word.lower(), "")
+
 
     # Loop through each word in the search words
     for word in search_words:
@@ -387,6 +456,8 @@ def selenium_get_raw_page(page_url, debug=False):
     # If debug mode is on, print a message
     if debug:
         print("selenium_get_raw_page")
+        time_to_get_page = time.time()
+
 
     try:
         # Create a UserAgent object
@@ -405,19 +476,24 @@ def selenium_get_raw_page(page_url, debug=False):
         chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])  # Disable automation detection
         chrome_options.add_argument(f"--window-size={screen_size}")
 
+        # Set page load strategy to 'none' to make navigation faster
+        chrome_options.page_load_strategy = 'none'
+
         if not debug:
             chrome_options.add_argument("--headless")  # Run in headless mode if not in debug mode
 
         # Create a WebDriver object
         driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
-
+        
         # Navigate to the page
         driver.get(url=page_url)
 
         # Wait for the page to load
         time.sleep(5)
 
-        for _ in range(20):
+        for _ in range(5):
+            if debug:
+                print("scrolling down")
             # Add some random mouse movements
             action = ActionChains(driver)
             action.move_by_offset(random.randint(1, 10), random.randint(1, 10))
@@ -443,23 +519,45 @@ def selenium_get_raw_page(page_url, debug=False):
         driver.quit()
 
         # Return the page source
+        if debug:
+            cprint(f"Time to get page: {round(time.time()-time_to_get_page)} seconds\n\n","yellow")
         return str(soup)
     except Exception as e:
         # If an error occurs, print the error and return False
         print(f"An error occurred: {e}\n\t{page_url}")
+        if debug:
+            cprint(f"Time to fail to get page: {round(time.time()-time_to_get_page)} seconds\n\n","yellow")
         return False
 
-def get_search_links(url, search_sites):
+def get_search_links(url, search_sites, debug=False):
+    #debug=True
+    if debug:
+        cprint("get_search_links","yellow")
+        print(f"\t{url}")
     # Fetch the page content
-    page_content = get_page_content(url, 8)
+    if debug:
+        print(f"Fetching page content")
+    page_content = get_page_content(url, 8,False)#, True)
+    if debug:
+        print(f"Got page content")
+        print(f"Type of 'page_content': {type(page_content)}")
+        if isinstance(page_content, str):
+            print(f"Length of 'page_content': {len(page_content)}")
+
 
     # If the page content was successfully fetched
     if page_content:
         # Extract the links from the page content
+        if debug:
+            print(f"Extracting links")
         fresh_links = extract_links(page_content)
+        if debug:
+            print(f"Extracted {len(fresh_links)} links")
 
         # Clean the extracted links by making sure they contain the search site URL and removing duplicates
         fresh_links = link_cleaner(fresh_links, search_sites)
+        if debug:
+            print(f"Cleaned {len(fresh_links)} links")
 
         # Return the cleaned links
         return fresh_links
