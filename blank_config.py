@@ -1,6 +1,8 @@
 open_ai_key = ""
 
-threads = 16
+
+threads = 8
+
 
 search_sites = [ 
     'https://jobs.chronicle.com/jobsrss/?countrycode=US&keywords=',
@@ -9,9 +11,11 @@ search_sites = [
     'https://main.hercjobs.org/jobs/?display=rss&keywords=',
     'https://www.linkedin.com/jobs/search/?keywords=',
     'https://academiccareers.com/rss/?q=',
+    'https://www.higheredjobs.com/search/advanced_action.cfm?Keyword=',
+    'https://academicpositions.com/find-jobs?search=',
+    'https://academicjobsonline.org/ajo?action=joblist&args=-0-0-&send=Go&id=',
+    'https://finearts.academickeys.com/seeker_search.php?q='
 ]
-
-
 
 
 search_words = [
@@ -20,7 +24,6 @@ search_words = [
     'mongodb',
     'javascript',
     ]
-
 
 
 bullet_resume = """Education:
@@ -50,5 +53,3 @@ Enhanced user satisfaction with modern JavaScript frameworks.
 Developed Node.js code adhering to industry standards.
 Gained proficiency in design patterns and concurrency.
 Utilized React.js and Angular.js to increase audience engagement."""
-
-
