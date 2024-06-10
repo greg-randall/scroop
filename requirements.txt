@@ -1,6 +1,8 @@
 beautifulsoup4
-pyppeteer
-pyppeteer-stealth
+fake_useragent
+openai
+selenium
 termcolor
+tqdm
 trafilatura
-requests
+webdriver_manager
