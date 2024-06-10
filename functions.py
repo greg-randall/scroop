@@ -198,7 +198,7 @@ def link_cleaner(links, search_sites, debug=False):
     return list(set(clean_links))
 
 
-def find_keywords(page_content, search_words, debug=False):
+def find_keywords(page_content, search_words, must_have_words, debug=False):
     # Convert the page content to lowercase once, to avoid doing it for each word
     page_content = page_content.lower()
 
@@ -210,6 +210,7 @@ def find_keywords(page_content, search_words, debug=False):
         page_content = page_content.replace(word.lower(), "")
 
 
+    keyword_found_match = False
     # Loop through each word in the search words
     for word in search_words:
         # Remove the double quotes from the search word and convert it to lowercase
@@ -220,10 +221,30 @@ def find_keywords(page_content, search_words, debug=False):
             # If the search word is found, and debug mode is on, print a message
             if debug:
                 print(f"\tFound search word '{word}' in page content")
+            keyword_found_match = True
+            break
+
+    # Check if there are any must-have words
+    if len(must_have_words) > 0:
+        print(f"Must have words: {must_have_words}")
+        # Initialize a counter for the must-have words found in the page content
+        must_have_words_match = 0
+        # Loop through each word in the must-have words
+        for word in must_have_words:
+            # Check if the must-have word appears in the page content
+            if word in page_content:
+                # If the must-have word is found, increment the counter
+                must_have_words_match += 1
+        print(f"Must have words match: {must_have_words_match} of {len(must_have_words)}")
+        # If not all must-have words are found in the page content, return False
+        if must_have_words_match < len(must_have_words):
+            return False
+        # If all must-have words are found and the keyword is found, return True
+        elif must_have_words_match == len(must_have_words) and keyword_found_match == True:
             return True
 
-    # If no search word is found in the page content after checking all the words, return False
-    return False
+    # If there are no must-have words, return True if the keyword is found, False otherwise
+    return keyword_found_match
 
 
 def gpt_me(prompt, model, key, debug=False):
@@ -442,7 +463,7 @@ def get_search_links(url, search_sites, debug=False):
     # If the page content could not be fetched, return an empty list
     return []
 
-def process_link(link, search_words):
+def process_link(link, search_words, must_have_words):
     # Fetch the page content and cache it for 30 days (720 hours = 30 days)
     page_content_raw = get_page_content(link, 720)
 
@@ -452,7 +473,7 @@ def process_link(link, search_words):
     # If there is body text
     if page_content:
         # Check if any of the search words are in the body text
-        found_word = find_keywords(page_content, search_words)
+        found_word = find_keywords(page_content, search_words, must_have_words)
 
         # If a search word was not found
         if not found_word:

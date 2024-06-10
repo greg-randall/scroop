@@ -97,7 +97,7 @@ if debug:
 
 print("Make Sure Pages are Cached & Remove Pages without Keywords...")
 with ThreadPoolExecutor(max_workers=threads) as executor:
-    skipped = sum(tqdm(executor.map(process_link, links, itertools.repeat(search_words, len(links))), total=len(links)))
+    skipped = sum(tqdm(executor.map(process_link, links, itertools.repeat(search_words, len(links)),itertools.repeat(must_have_words, len(links))), total=len(links)))
 
 # Read the file 'scanned_sites.log' into a set for faster lookup
 with open('scanned_sites.log', 'r') as file:

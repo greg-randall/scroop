@@ -27,6 +27,13 @@ search_words = [
     'javascript',
     ]
 
+# this word is not searched for, but is used to filter out jobs that don't meet some criteria. 
+# you can also leave this blank by setting it to an empty list ie []
+must_have_words = [ 
+    'remote'
+    ]
+
+
 
 bullet_resume = """Education:
 B.S. Computer Science, University of Georgia
@@ -55,3 +62,9 @@ Enhanced user satisfaction with modern JavaScript frameworks.
 Developed Node.js code adhering to industry standards.
 Gained proficiency in design patterns and concurrency.
 Utilized React.js and Angular.js to increase audience engagement."""
+
+
+
+must_have_words = [word.lower() for word in must_have_words]
+
+search_words = [word.lower() for word in search_words]
