@@ -517,7 +517,7 @@ def get_search_links(url, search_sites, debug=False):
     # Fetch the page content
     if debug:
         print(f"Fetching page content")
-    page_content = get_page_content(url, 8,False)#, True)
+    page_content = get_page_content(url, 4, False)
     if debug:
         print(f"Got page content")
         print(f"Type of 'page_content': {type(page_content)}")

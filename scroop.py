@@ -161,7 +161,7 @@ for i, link in enumerate(links, start=1):
 
         # Print the current link and its job match rating
         progress_list = f"{i}/{len(links)}: {link} - {job_match}"
-        if job_match >= 7:
+        if job_match >= 8:
             cprint(progress_list, 'green')
 
             summary_string_temp = ""
