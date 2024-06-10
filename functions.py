@@ -5,38 +5,22 @@ import os
 import random
 import re
 import time
-import xml.etree.ElementTree as ET
 from urllib.parse import urlparse, quote, unquote, urljoin, urlunparse
 
 
 # Related third party imports
 from bs4 import BeautifulSoup
 from fake_useragent import UserAgent
-from html import unescape
-from llmlingua import PromptCompressor
-import nltk
-from nltk import download
 from openai import OpenAI
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.action_chains import ActionChains
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
 from termcolor import cprint
 from trafilatura import extract
-from transformers import AutoTokenizer
 from webdriver_manager.chrome import ChromeDriverManager
-from pprint import pprint
 
 
-# Local application/library specific imports
-import selenium.webdriver.support.ui as ui
-from selenium.common.exceptions import NoSuchElementException
-import secrets
 
 
 
@@ -273,93 +257,6 @@ def gpt_me(prompt, model, key, debug=False):
         print(f"A ChatGPT error occurred: {e}\n\t{prompt}\n\n\n\n")
         return False
 
-
-# Maximum number of tokens for the compression tool
-MAX_TOKENS = 450
-
-# Disable parallelism for tokenizers to avoid potential issues
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
-
-def divide_sentence(sentence, n):
-
-    # Split the sentence at spaces or commas
-    pieces = re.split('[ ,]', sentence)
-
-    # If there are fewer pieces than N
-    if len(pieces) < n:
-        # Return the pieces as they are
-        return pieces
-
-    # If there are at least N pieces
-    else:
-        # Initialize an empty list for the final pieces
-        final_pieces = []
-
-        # Calculate the size of each piece
-        piece_size = len(pieces) // n
-
-        # For each index in the range 0 to N
-        for i in range(n):
-            # If this is the last index
-            if i == n - 1:
-                # Add the remaining pieces to the final pieces
-                final_pieces.append(' '.join(pieces[i * piece_size:]))
-            else:
-                # Add the next piece_size pieces to the final pieces
-                final_pieces.append(' '.join(pieces[i * piece_size:(i + 1) * piece_size]))
-
-        # Return the final pieces
-        return final_pieces
-
-def compress_prompt(text, debug=False):
-    return text
-    if debug:
-        cprint("compress_prompt","yellow")
-        print(f"Compressing prompt with {len(text)} characters")
-
-    # Replace certain characters with periods to help sentence splitting
-    text = re.sub(r'\n\n|[:;]', '. ', text, flags=re.MULTILINE)
-    text = re.sub(r'^-\s+', '. ', text, flags=re.MULTILINE)
-    text = re.sub(r'\n+', ' ', text, flags=re.MULTILINE)
-    text = re.sub(r'\s+-\s+', ' . ', text, flags=re.MULTILINE)
-
-    # Initialize the llm_lingua model and tokenizer
-    llm_lingua = PromptCompressor(
-        model_name="microsoft/llmlingua-2-xlm-roberta-large-meetingbank",
-        use_llmlingua2=True,
-    )
-    tokenizer = AutoTokenizer.from_pretrained("microsoft/llmlingua-2-xlm-roberta-large-meetingbank")
-    llm_lingua.tokenizer = tokenizer
-
-    # Split the text into sentences
-    sentences = nltk.sent_tokenize(text)
-
-    sentences_shortened = []
-
-    for sentence in sentences:
-        if len(tokenizer.encode(sentence, truncation=False)) > MAX_TOKENS:
-            peices = round(len(tokenizer.encode(sentence, truncation=False))/MAX_TOKENS)
-            splits = divide_sentence(sentence, peices)
-            sentences_shortened.extend(splits)
-            print(f"Splitting sentence into {peices} pieces")
-        else:
-            sentences_shortened.append(sentence)
-            #print(f"splitting not needed for sentence")
-
-    # Loop over the sentences
-    compressed_text = ""
-    for sentence in sentences_shortened:
-        compressed = llm_lingua.compress_prompt(sentence, rate=0.5, force_tokens = ['?','.','!'])
-        compressed_text += compressed['compressed_prompt'] + ' '
-
-    compressed_text = re.sub(r'\s+', ' ', compressed_text, flags=re.MULTILINE)
-
-    # Return the compressed text, removing any trailing whitespace
-    return compressed_text.strip()
-
-
-import time
-
 def gpt_true_or_false(prompt, model, open_ai_key, retries=3, debug=False):
     if debug:
         cprint("gpt_true_or_false","yellow")
@@ -517,7 +414,7 @@ def get_search_links(url, search_sites, debug=False):
     # Fetch the page content
     if debug:
         print(f"Fetching page content")
-    page_content = get_page_content(url, 4, False)
+    page_content = get_page_content(url, 2, False)#2 hours
     if debug:
         print(f"Got page content")
         print(f"Type of 'page_content': {type(page_content)}")
@@ -586,7 +483,7 @@ def generate_gpt_summary(link, open_ai_key, debug=False):
         # If the summary file doesn't exist
         if not os.path.exists(filepath):
             # Generate a summary of the page content using the GPT-3.5-turbo model
-            prompt = f"Please read this job listing and write a concise summary of required skills, degrees, etc:\n\n{compress_prompt(page_content)}"
+            prompt = f"Please read this job listing and write a concise summary of required skills, degrees, etc:\n\n{page_content}"
             job_summary = gpt_me(prompt, "gpt-3.5-turbo", open_ai_key, debug)
 
             if job_summary==False:
@@ -626,7 +523,7 @@ def generate_gpt_job_match(link, bullet_resume, open_ai_key, debug=False):
 
         if not os.path.exists(filepath):
             # Use the LLM to generate a summary of the job listing
-            prompt = f"Read the applicant's RESUME and JOB SUMMARY below and determine if the applicant is a good fit for this job on a scale of 1 to 10. 1 is a bad fit, 10 is a perfect fit. REPLY WITH AN INTEGER 1-10!!!\n\nJOB SUMMARY:  {compress_prompt(bullet_resume)}\n\nJOB SUMMARY:  {compress_prompt(job_summary)}"
+            prompt = f"Read the applicant's RESUME and JOB SUMMARY below and determine if the applicant is a good fit for this job on a scale of 1 to 10. 1 is a bad fit, 10 is a perfect fit. REPLY WITH AN INTEGER 1-10!!!\n\nJOB SUMMARY:  {bullet_resume}\n\nJOB SUMMARY:  {job_summary}"
             job_is_a_good_match = gpt_range(prompt,"gpt-4o", open_ai_key,True)
             with open(filepath, 'w') as file:
                 file.write(str(job_is_a_good_match))
