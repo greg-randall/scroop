@@ -226,7 +226,8 @@ def find_keywords(page_content, search_words, must_have_words, debug=False):
 
     # Check if there are any must-have words
     if len(must_have_words) > 0:
-        print(f"Must have words: {must_have_words}")
+        if debug:
+            print(f"Must have words: {must_have_words}")
         # Initialize a counter for the must-have words found in the page content
         must_have_words_match = 0
         # Loop through each word in the must-have words
@@ -235,7 +236,8 @@ def find_keywords(page_content, search_words, must_have_words, debug=False):
             if word in page_content:
                 # If the must-have word is found, increment the counter
                 must_have_words_match += 1
-        print(f"Must have words match: {must_have_words_match} of {len(must_have_words)}")
+        if debug:
+            print(f"Must have words match: {must_have_words_match} of {len(must_have_words)}")
         # If not all must-have words are found in the page content, return False
         if must_have_words_match < len(must_have_words):
             return False
