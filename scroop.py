@@ -24,12 +24,6 @@ from functions import *
 
 
 
-
-# Enable debug mode to only process 10 links and turn on some extra print statements
-debug = False
-
-
-
 # Define the output filenames
 timestamp = datetime.now().strftime('%m-%d-%Y_%I-%M-%p')
 output_csv_filename = f"job_search_{timestamp}.csv"

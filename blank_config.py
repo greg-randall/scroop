@@ -3,6 +3,8 @@ open_ai_key = ""
 
 threads = 8
 
+# Enable debug mode to only process 10 links and turn on some extra print statements
+debug = False
 
 search_sites = [ 
     'https://jobs.chronicle.com/jobsrss/?countrycode=US&keywords=',
@@ -16,7 +18,10 @@ search_sites = [
     'https://academicjobsonline.org/ajo?action=joblist&args=-0-0-&send=Go&id=',
     'https://finearts.academickeys.com/seeker_search.php?q=', #this site has several other categories -- see this page for a list https://www.academickeys.com/all/choose_discipline.php. seems like you just swap the subdomain from 'finearts' to 'law'.
     'https://diversejobs.net/search?location=&page=1&radius_mi=50000&experience=&keyword=',
-    'https://www.academicgates.com/job/find-jobs?sortby=latest&kw='
+    'https://www.academicgates.com/job/find-jobs?sortby=latest&kw=',
+    'https://www.careerbuilder.com/jobs?keywords=',
+    'https://www.indeed.com/jobs?q=',
+    'https://jobs.springboardforthearts.org/jobs?keywords=',
 ]
 
 
