@@ -176,9 +176,12 @@ for i, link in enumerate(links, start=1):
             summary_string_temp +=f"Job Description:\n{summary}\n\n\n\n"
 
             output_summary.append(summary_string_temp)
-
+        elif job_match >= 6:
+            cprint(f" {progress_list}", 'blue')
+        elif job_match >= 4:
+            cprint(f"    {progress_list}", 'yellow')
         else:
-            print(progress_list)
+            print(f"      {progress_list}")
 
         # Append the timestamp, link, and job match rating to the output data
         output_csv.append([datetime.now().strftime("%m-%d-%Y_%I-%M-%p"), job_match, link])
