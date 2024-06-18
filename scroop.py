@@ -23,7 +23,6 @@ from config import *
 from functions import *
 
 
-
 # Define the output filenames
 timestamp = datetime.now().strftime('%m-%d-%Y_%I-%M-%p')
 output_csv_filename = f"job_search_{timestamp}.csv"
@@ -62,9 +61,12 @@ if debug: #this debug will record the time it takes to perform the searches/gpts
     now = datetime.now()
     before_timestamp = now.timestamp()
 
+
+split_site_search_list = split_list(site_search_list, threads)
+
 # Get the search links from the search sites
 with ThreadPoolExecutor(max_workers=threads) as executor:
-    links = list(tqdm(executor.map(get_search_links, site_search_list, itertools.repeat(search_sites, len(site_search_list))), total=len(site_search_list)))
+    links = list(tqdm(executor.map(get_search_links, split_site_search_list, itertools.repeat(search_sites, len(split_site_search_list))), total=len(split_site_search_list)))
 
 if debug:
     now = datetime.now()
@@ -74,6 +76,7 @@ if debug:
 
     with open('threads.log', 'a') as f:
         f.write(site_search_log + '\n')
+
 
 # Flatten the list of lists of links into a single list of links
 links = [link for sublist in links for link in sublist]
@@ -105,9 +108,9 @@ print(f"Links Remaining after Duplicates Removed: {len(links)}\n")
 
 random.shuffle(links)
 
-if debug:
-    print("Debug Mode: Only processing 10 links")
-    links = random.sample(links, 10)
+#if debug:
+#    print("Debug Mode: Only processing 10 links")
+#    links = random.sample(links, 10)
 
 print("Make Sure Pages are Cached & Remove Pages without Keywords...")
 if debug:
@@ -115,8 +118,12 @@ if debug:
         now = datetime.now()
         before_timestamp = now.timestamp()
 
+# Assuming links and threads are defined somewhere above
+split_links = split_list(links, threads)
+
 with ThreadPoolExecutor(max_workers=threads) as executor:
-    skipped = sum(tqdm(executor.map(process_link, links, itertools.repeat(search_words, len(links)),itertools.repeat(must_have_words, len(links))), total=len(links)))
+    skipped = sum(tqdm(executor.map(process_links, split_links, itertools.repeat(search_words, len(split_links)), itertools.repeat(must_have_words, len(split_links))), total=len(split_links)))
+    
 if debug:
     if len(links) > 0:
         now = datetime.now()
@@ -124,6 +131,7 @@ if debug:
         site_search_log = f"process_links {threads} - {(after_timestamp - before_timestamp)/len(links)} seconds per thread"
         with open('threads.log', 'a') as f:
             f.write(site_search_log + '\n')
+
 
 # Read the file 'scanned_sites.log' into a set for faster lookup
 with open('scanned_sites.log', 'r') as file:
@@ -161,6 +169,7 @@ if debug:
 
         with open('threads.log', 'a') as f:
             f.write(site_search_log + '\n')
+
 
 
 

@@ -21,7 +21,9 @@ from trafilatura import extract
 from webdriver_manager.chrome import ChromeDriverManager
 
 
-
+from bs4 import BeautifulSoup
+from urllib.parse import urlparse
+import re
 
 
 
@@ -50,7 +52,7 @@ def get_page_body_text(raw_page, full_text=False, debug=False):
     return clean_text
 
 
-def get_page_content(url, cache_age=72, debug=False):
+def get_page_content(driver, url, cache_age=72, debug=False):
     # Convert cache age to seconds
     cache_age *= 60 * 60
 
@@ -78,7 +80,7 @@ def get_page_content(url, cache_age=72, debug=False):
         print(f"cache {filepath} doesn't exist or is older than {cache_age} seconds, getting fresh data")
 
     # Get the raw page content
-    output = selenium_get_raw_page(url, debug)
+    output = selenium_get_raw_page(driver, url, debug)
 
     # If the output is not None or empty, save it to a file and return it
     if output:
@@ -91,9 +93,7 @@ def get_page_content(url, cache_age=72, debug=False):
     # If the output is None or empty, return False
     return False
 
-from bs4 import BeautifulSoup
-from urllib.parse import urlparse
-import re
+
 
 def extract_links(page_content: str, debug: bool = False) -> list:
 
@@ -352,45 +352,47 @@ def gpt_range(prompt, model, open_ai_key, retries=3, debug=False):
     return None
 
 
-def selenium_get_raw_page(page_url, debug=False):
+def initialize_selenium_browser(debug=False):
+    # Create a UserAgent object
+    ua = UserAgent()
+
+    # List of possible screen sizes
+    screen_sizes = ["1024x768", "1280x800", "1366x768", "1440x900", "1920x1080", "3840x2160"]
+    # Choose a random screen size from the list
+    screen_size = random.choice(screen_sizes)
+
+    # Set up Chrome options
+    chrome_options = Options()
+    chrome_options.add_argument(f"user-agent={ua.random}")  # Set the user agent to a random one
+    chrome_options.add_argument("--disable-blink-features=AutomationControlled")  # Disable automation detection
+    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])  # Disable automation detection
+    chrome_options.add_argument(f"--window-size={screen_size}")
+
+    # Set page load strategy to 'none' to make navigation faster
+    chrome_options.page_load_strategy = 'none'
+
+    if not debug:
+        chrome_options.add_argument("--headless")  # Run in headless mode if not in debug mode
+
+    # Create a WebDriver object
+    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+
+    return driver
+
+def selenium_get_raw_page(driver, page_url, debug=False):
     # If debug mode is on, print a message
     if debug:
         print("selenium_get_raw_page")
         time_to_get_page = time.time()
 
-
     try:
-        # Create a UserAgent object
-        ua = UserAgent()
-
-        # List of possible screen sizes
-        screen_sizes = ["1024x768", "1280x800", "1366x768", "1440x900", "1920x1080", "3840x2160"]
-        # Choose a random screen size from the list
-        screen_size = random.choice(screen_sizes)
-        # Set the window size to the chosen screen size
-
-        # Set up Chrome options
-        chrome_options = Options()
-        chrome_options.add_argument(f"user-agent={ua.random}")  # Set the user agent to a random one
-        chrome_options.add_argument("--disable-blink-features=AutomationControlled")  # Disable automation detection
-        chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])  # Disable automation detection
-        chrome_options.add_argument(f"--window-size={screen_size}")
-
-        # Set page load strategy to 'none' to make navigation faster
-        chrome_options.page_load_strategy = 'none'
-
-        if not debug:
-            chrome_options.add_argument("--headless")  # Run in headless mode if not in debug mode
-
-        # Create a WebDriver object
-        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
-        
         # Navigate to the page
         driver.get(url=page_url)
 
         # Wait for the page to load
         time.sleep(5)
 
+ 
         for _ in range(5):
             if debug:
                 print("scrolling down")
@@ -415,80 +417,102 @@ def selenium_get_raw_page(page_url, debug=False):
         for a in soup.find_all('a', href=True):
             a['href'] = urljoin(page_url, a['href'])
 
-        # Close the browser
-        driver.quit()
-
         # Return the page source
         if debug:
             cprint(f"Time to get page: {round(time.time()-time_to_get_page)} seconds\n\n","yellow")
         return str(soup)
     except Exception as e:
         # If an error occurs, print the error and return False
-        print(f"An error occurred: {e}\n\t{page_url}")
+        print(f"selenium_get_raw_page - An error occurred: {e}\n\t{page_url}")
         if debug:
             cprint(f"Time to fail to get page: {round(time.time()-time_to_get_page)} seconds\n\n","yellow")
         return False
 
-def get_search_links(url, search_sites, debug=False):
-    #debug=True
-    if debug:
-        cprint("get_search_links","yellow")
-        print(f"\t{url}")
-    # Fetch the page content
-    if debug:
-        print(f"Fetching page content")
-    page_content = get_page_content(url, 2, False)#2 hours
-    if debug:
-        print(f"Got page content")
-        print(f"Type of 'page_content': {type(page_content)}")
-        if isinstance(page_content, str):
-            print(f"Length of 'page_content': {len(page_content)}")
+def get_search_links(urls, search_sites, debug=False):
+    # Initialize an empty list to store all the links
+    all_links = []
 
+    driver = initialize_selenium_browser(debug)
 
-    # If the page content was successfully fetched
-    if page_content:
-        # Extract the links from the page content
+    for url in urls:
         if debug:
-            print(f"Extracting links")
-        fresh_links = extract_links(page_content)
+            cprint("get_search_links","yellow")
+            print(f"\t{url}")
+
+        # Fetch the page content
         if debug:
-            print(f"Extracted {len(fresh_links)} links")
+            print(f"Fetching page content")
 
-        # Clean the extracted links by making sure they contain the search site URL and removing duplicates
-        fresh_links = link_cleaner(fresh_links, search_sites)
         if debug:
-            print(f"Cleaned {len(fresh_links)} links")
+            page_content = get_page_content(driver, url, 0, False)  # for debug disable cache
+        else:
+            page_content = get_page_content(driver, url, 2, False)  # 2 hours
+        
+        if debug:
+            print(f"Got page content")
+            print(f"Type of 'page_content': {type(page_content)}")
+            if isinstance(page_content, str):
+                print(f"Length of 'page_content': {len(page_content)}")
 
-        # Return the cleaned links
-        return fresh_links
+        # If the page content was successfully fetched
+        if page_content:
+            # Extract the links from the page content
+            if debug:
+                print(f"Extracting links")
+            fresh_links = extract_links(page_content)
+            if debug:
+                print(f"Extracted {len(fresh_links)} links")
 
-    # If the page content could not be fetched, return an empty list
-    return []
+            # Clean the extracted links by making sure they contain the search site URL and removing duplicates
+            fresh_links = link_cleaner(fresh_links, search_sites)
+            if debug:
+                print(f"Cleaned {len(fresh_links)} links")
 
-def process_link(link, search_words, must_have_words):
-    # Fetch the page content and cache it for 30 days (720 hours = 30 days)
-    page_content_raw = get_page_content(link, 720)
+            # Add the cleaned links to the all_links list
+            all_links.extend(fresh_links)
 
-    # Extract the body text from the page content
-    page_content = get_page_body_text(page_content_raw)
+    # Close the browser
+    driver.quit()
 
-    # If there is body text
-    if page_content:
-        # Check if any of the search words are in the body text
-        found_word = find_keywords(page_content, search_words, must_have_words)
+    # Return the list of all links
+    return all_links
 
-        # If a search word was not found
-        if not found_word:
-            # Log the link
-            with open("scanned_sites.log", 'a') as file:
-                file.write(f"{link}\n")
-            return 1
-    return 0
 
+def process_links(links, search_words, must_have_words):
+
+    return_count = 0
+
+    # Initialize the Selenium browser
+    driver = initialize_selenium_browser()
+
+    for link in links:
+        # Fetch the page content and cache it for 30 days (720 hours = 30 days)
+        page_content_raw = get_page_content(driver, link, 720)
+
+        # Extract the body text from the page content
+        page_content = get_page_body_text(page_content_raw)
+
+        # If there is body text
+        if page_content:
+            # Check if any of the search words are in the body text
+            found_word = find_keywords(page_content, search_words, must_have_words)
+
+            # If a search word was not found
+            if not found_word:
+                # Log the link
+                with open("scanned_sites.log", 'a') as file:
+                    file.write(f"{link}\n")
+
+                return_count += 1
+
+    # Quit the driver after processing all links
+    driver.quit()
+
+    return return_count
 
 def generate_gpt_summary(link, open_ai_key, debug=False):
     # Fetch the page content and cache it for 30 days (720 hours = 30 days)
-    page_content_raw = get_page_content(link, 720)
+    page_content_raw = get_page_content(initialize_selenium_browser(),link, 720)
 
     # Extract the body text from the page content
     page_content = get_page_body_text(page_content_raw)
@@ -560,3 +584,32 @@ def generate_gpt_job_match(link, bullet_resume, open_ai_key, debug=False):
 
     
     return False
+
+
+def split_list(input_list, size):
+    # Calculate the length of the input list
+    length = len(input_list)
+
+    # Calculate the base size and the number of lists that will get an extra item
+    base_size = length // size
+    remainder = length % size
+
+    # Initialize the output list
+    output = []
+
+    # Initialize the iterator over the input list
+    iterator = iter(input_list)
+
+    # Create the lists
+    for i in range(size):
+        # Determine the size of the current list
+        current_size = base_size + (i < remainder)
+        
+        # Create the current list
+        current_list = [next(iterator) for _ in range(current_size)]
+        
+        # Add the current list to the output
+        output.append(current_list)
+
+    # Return the output
+    return output
