@@ -51,9 +51,29 @@ random.shuffle(site_search_list)
 
 print("Getting Searches in parallel...")
 
+if debug: #this debug will record the time it takes to perform the searches/gpts/etc so that you can determine the correct number fo threads to use
+    # Get current date and time
+    now = datetime.now()
+    # Format datetime object to a pretty string
+    pretty_timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
+    # Append the pretty_timestamp to the file 'threads.log'
+    with open('threads.log', 'a') as f:
+        f.write(pretty_timestamp + '\n')
+    now = datetime.now()
+    before_timestamp = now.timestamp()
+
 # Get the search links from the search sites
 with ThreadPoolExecutor(max_workers=threads) as executor:
     links = list(tqdm(executor.map(get_search_links, site_search_list, itertools.repeat(search_sites, len(site_search_list))), total=len(site_search_list)))
+
+if debug:
+    now = datetime.now()
+    after_timestamp = now.timestamp()
+
+    site_search_log = f"get_search_links {threads} - {(after_timestamp - before_timestamp)/len(site_search_list)} seconds per thread"
+
+    with open('threads.log', 'a') as f:
+        f.write(site_search_log + '\n')
 
 # Flatten the list of lists of links into a single list of links
 links = [link for sublist in links for link in sublist]
@@ -90,8 +110,20 @@ if debug:
     links = random.sample(links, 10)
 
 print("Make Sure Pages are Cached & Remove Pages without Keywords...")
+if debug:
+    if len(links) > 0:
+        now = datetime.now()
+        before_timestamp = now.timestamp()
+
 with ThreadPoolExecutor(max_workers=threads) as executor:
     skipped = sum(tqdm(executor.map(process_link, links, itertools.repeat(search_words, len(links)),itertools.repeat(must_have_words, len(links))), total=len(links)))
+if debug:
+    if len(links) > 0:
+        now = datetime.now()
+        after_timestamp = now.timestamp()
+        site_search_log = f"process_links {threads} - {(after_timestamp - before_timestamp)/len(links)} seconds per thread"
+        with open('threads.log', 'a') as f:
+            f.write(site_search_log + '\n')
 
 # Read the file 'scanned_sites.log' into a set for faster lookup
 with open('scanned_sites.log', 'r') as file:
@@ -111,10 +143,24 @@ print(f"Links Remaining after Pages without Keywords removed: {len(links)}")
 
 print("\nGenerating GPT Summaries of Jobs...")
 
+if debug:
+    if len(links) > 0:
+        now = datetime.now()
+        before_timestamp = now.timestamp()
+
 random.shuffle(links)
 with ThreadPoolExecutor(max_workers=threads) as executor:
     list(tqdm(executor.map(generate_gpt_summary, links, itertools.repeat(open_ai_key, len(links))), total=len(links)))
 
+if debug:
+    if len(links) > 0:
+        now = datetime.now()
+        after_timestamp = now.timestamp()
+
+        site_search_log = f"generate_gpt_summary {threads} - {(after_timestamp - before_timestamp)/len(links)} seconds per thread"
+
+        with open('threads.log', 'a') as f:
+            f.write(site_search_log + '\n')
 
 
 
@@ -124,8 +170,22 @@ with ThreadPoolExecutor(max_workers=threads) as executor:
 print("\nGenerating Job Match Number...")
 random.shuffle(links)
 
+if debug:
+    if len(links) > 0:
+        now = datetime.now()
+        before_timestamp = now.timestamp()
+
 with ThreadPoolExecutor(max_workers=threads) as executor:
     results = list(tqdm(executor.map(generate_gpt_job_match, links, [bullet_resume]*len(links), [open_ai_key]*len(links)), total=len(links)))
+if debug:
+    if len(links) > 0:
+        now = datetime.now()
+        after_timestamp = now.timestamp()
+
+        site_search_log = f"generate_gpt_job_match {threads} - {(after_timestamp - before_timestamp)/len(links)} seconds per thread"
+
+        with open('threads.log', 'a') as f:
+            f.write(site_search_log + '\n\n\n')
 
  
 
