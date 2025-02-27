@@ -51,7 +51,7 @@ site_search_list = [f"{site}{quote(word)}" for site in search_sites for word in 
 # Randomize the order
 random.shuffle(site_search_list)
 
-print("Getting Searches in parallel...")
+print(f"Getting Searches in parallel from {len(site_search_list)} URLs using {threads} threads...")
 
 if debug: #this debug will record the time it takes to perform the searches/gpts/etc so that you can determine the correct number fo threads to use
     # Get current date and time
@@ -69,7 +69,23 @@ split_site_search_list = split_list(site_search_list, threads)
 
 # Get the search links from the search sites
 with ThreadPoolExecutor(max_workers=threads) as executor:
-    links = list(tqdm(executor.map(get_search_links, split_site_search_list, itertools.repeat(search_sites, len(split_site_search_list))), total=len(split_site_search_list)))
+    # Create a progress bar with more detailed information
+    progress_bar = tqdm(
+        total=len(split_site_search_list),
+        desc="Searching job sites",
+        unit="batch",
+        bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} batches [{elapsed}<{remaining}, {rate_fmt}]"
+    )
+    
+    # Process each batch and update the progress bar
+    all_links = []
+    for result in executor.map(get_search_links, split_site_search_list, itertools.repeat(search_sites, len(split_site_search_list))):
+        all_links.append(result)
+        progress_bar.update(1)
+        progress_bar.set_postfix({"links found": sum(len(batch) for batch in all_links)})
+    
+    progress_bar.close()
+    links = all_links
 
 if debug:
     now = datetime.now()
