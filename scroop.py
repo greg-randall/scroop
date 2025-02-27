@@ -15,12 +15,15 @@ import itertools
 from operator import itemgetter
 import shutil
 import csv
+import pandas as pd
 
 from termcolor import cprint
 from tqdm import tqdm
 
 from config import *
 from functions import *
+
+import subprocess
 
 
 # Define the output filenames
@@ -108,9 +111,9 @@ print(f"Links Remaining after Duplicates Removed: {len(links)}\n")
 
 random.shuffle(links)
 
-#if debug:
-#    print("Debug Mode: Only processing 10 links")
-#    links = random.sample(links, 10)
+if debug:
+    print("Debug Mode: Only processing 10 links")
+    links = random.sample(links, 10)
 
 print("Make Sure Pages are Cached & Remove Pages without Keywords...")
 if debug:
@@ -122,7 +125,7 @@ if debug:
 split_links = split_list(links, threads)
 
 with ThreadPoolExecutor(max_workers=threads) as executor:
-    skipped = sum(tqdm(executor.map(process_links, split_links, itertools.repeat(search_words, len(split_links)), itertools.repeat(must_have_words, len(split_links))), total=len(split_links)))
+    skipped = sum(tqdm(executor.map(process_links, split_links, itertools.repeat(search_words, len(split_links)), itertools.repeat(must_have_words, len(split_links)), itertools.repeat(anti_kewords, len(split_links))), total=len(split_links)))
     
 if debug:
     if len(links) > 0:
@@ -303,8 +306,49 @@ if len(output_csv)>0: # Only write the output data to a CSV file if there is dat
         writer.writerow(['Timestamp','Job Match Rating', 'Link'])  # Write the header
         writer.writerows(output_csv)  # Write the data
 
+        # Assuming output_csv is a list of lists
+    df = pd.DataFrame(output_csv, columns=['Timestamp','Job Match Rating', 'Link'])
+    # Convert the DataFrame to an HTML table
+    csv_table = df.to_html(index=False)
+
+    csv_table =csv_table.replace('"', '\\"') 
+
+    csv_blank=False
+else:
+    csv_blank=True
+
 if len(output_summary)>0: # Only write the output data to a file if there is data to write
     output_summary.sort(reverse=True)    
     # Write the output data to the file
     with open(output_summary_filename, 'w', newline='') as file:
         file.writelines(output_summary)
+    summary_blank=False
+else:
+    summary_blank=True
+
+
+# Get today's date
+today = datetime.today()
+# Format the date
+formatted_date = today.strftime("%m-%d-%Y")
+
+
+if not csv_blank and not summary_blank:
+
+    
+    output_summary = '<hr>'.join(output_summary)
+
+    output_summary = output_summary.replace('"', '\\"')
+
+    command = f"""echo -e "To: {email}\nMIME-Version: 1.0\nContent-Type: text/html\nSubject: {formatted_date} Scroop\n<html>\n<body>\n<pre>\n{output_summary}\n</pre>\n<hr/>\n{csv_table}\n</body>\n</html>\n" | ssmtp {email}"""
+
+elif not csv_blank:
+    command = f"""echo -e "To: {email}\nMIME-Version: 1.0\nContent-Type: text/html\nSubject: {formatted_date} Scroop\n<html>\n<body>\n<pre>\n{csv_table}\n</pre>\n</body>\n</html>\n" | ssmtp {email}"""
+else:
+    command = f"echo -e \"To: {email}\nSubject: {formatted_date} Scroop Ran But Found Nothing\nBLANK\n\" |  ssmtp {email}"
+
+# Write the command to a file
+with open('command.txt', 'w') as file:
+    file.write(command)
+
+subprocess.run(command, shell=True, check=True)
