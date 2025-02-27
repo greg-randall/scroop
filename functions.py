@@ -43,7 +43,7 @@ def get_page_body_text(raw_page, full_text=False, debug=False):
         return False
 
     # Strip HTML tags and remove extra linebreaks and whitespace
-    clean_text = re.sub('\s*\n+\s*', '\n\n', text)
+    clean_text = re.sub(r'\s*\n+\s*', '\n\n', text)
 
     # Unsmarten quotes
     clean_text = clean_text.replace("‘", "'").replace("’", "'").replace("“", '"').replace("”", '"')
@@ -116,7 +116,7 @@ def extract_links(page_content: str, debug: bool = False) -> list:
     page_content = re.sub('&amp;', '&', page_content)
 
     # Remove linebreaks and existing tildes
-    page_content = re.sub('\n|~', ' ', page_content)
+    page_content = re.sub(r'\n|~', ' ', page_content)
 
     # Add a newline and a tilde before each opening link tag and a newline after each closing link tag
     page_content = re.sub('<link>', '\n~<link>', page_content)
