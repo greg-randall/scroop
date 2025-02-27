@@ -75,47 +75,73 @@ print(f"Processing {total_search_urls} search URLs...")
 # Create a shared counter for progress tracking
 processed_urls = 0
 found_links = 0
-
-# Function to update progress
-def get_search_links_with_progress(urls_batch, search_sites):
-    global processed_urls, found_links
-    result = get_search_links(urls_batch, search_sites)
-    # Update counters
-    with progress_lock:
-        processed_urls += len(urls_batch)
-        found_links += len(result)
-        # Update progress bar
-        progress_bar.update(len(urls_batch))
-        progress_bar.set_postfix({
-            "processed": f"{processed_urls}/{total_search_urls}",
-            "links found": found_links,
-            "completion": f"{processed_urls/total_search_urls:.1%}"
-        })
-    return result
+failed_urls = 0
 
 # Import threading Lock for thread-safe counter updates
 import threading
 progress_lock = threading.Lock()
 
+# Function to process a single URL and handle errors
+def process_single_url(url, search_sites):
+    global processed_urls, found_links, failed_urls
+    try:
+        # Get links from this URL
+        result = get_search_links([url], search_sites)
+        success = True
+    except Exception as e:
+        print(f"Error processing URL: {url}\n{str(e)}")
+        result = []
+        success = False
+    
+    # Update counters
+    with progress_lock:
+        processed_urls += 1
+        if success:
+            found_links += len(result)
+        else:
+            failed_urls += 1
+        
+        # Update progress bar
+        progress_bar.update(1)
+        progress_bar.set_postfix({
+            "processed": f"{processed_urls}/{total_search_urls}",
+            "links": found_links,
+            "failed": failed_urls
+        })
+    
+    return result
+
 # Get the search links from the search sites
+print("Starting search process - this may take a while...")
+all_links = []
+
+# Create a progress bar with more detailed information
+progress_bar = tqdm(
+    total=total_search_urls,
+    desc="Searching job sites",
+    unit="URL",
+    bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} URLs [{elapsed}<{remaining}, {rate_fmt}]"
+)
+
 with ThreadPoolExecutor(max_workers=threads) as executor:
-    # Create a progress bar with more detailed information
-    progress_bar = tqdm(
-        total=total_search_urls,
-        desc="Searching job sites",
-        unit="URL",
-        bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} URLs [{elapsed}<{remaining}, {rate_fmt}]"
-    )
+    # Submit all tasks and get futures
+    futures = [
+        executor.submit(process_single_url, url, search_sites)
+        for url in site_search_list
+    ]
     
-    # Process each batch and update the progress bar
-    all_links = list(executor.map(
-        get_search_links_with_progress, 
-        split_site_search_list, 
-        itertools.repeat(search_sites, len(split_site_search_list))
-    ))
-    
-    progress_bar.close()
-    links = all_links
+    # Process futures as they complete
+    for future in concurrent.futures.as_completed(futures):
+        try:
+            result = future.result()
+            all_links.extend(result)
+        except Exception as e:
+            print(f"Error in future: {str(e)}")
+
+progress_bar.close()
+links = all_links
+
+print(f"\nSearch complete: {processed_urls} URLs processed, {found_links} links found, {failed_urls} URLs failed")
 
 if debug:
     now = datetime.now()
@@ -170,13 +196,46 @@ if debug:
 # Assuming links and threads are defined somewhere above
 split_links = split_list(links, threads)
 
-# Create a shared counter for tracking processed links
-processed_links_count = 0
+# Process individual links instead of batches for better progress tracking
 total_links_to_process = len(links)
+processed_links_count = 0
+skipped_links_count = 0
+failed_links_count = 0
 
 print(f"Processing {total_links_to_process} links for caching and filtering...")
 
-# Create a progress bar outside the executor
+# Function to process a single link and handle errors
+def process_single_link(link, search_words, must_have_words, anti_keywords):
+    global processed_links_count, skipped_links_count, failed_links_count
+    try:
+        # Check if this link should be skipped
+        should_skip = process_links([link], search_words, must_have_words, anti_keywords)
+        success = True
+        skipped = should_skip
+    except Exception as e:
+        print(f"Error processing link: {link}\n{str(e)}")
+        success = False
+        skipped = 0
+    
+    # Update counters
+    with progress_lock:
+        processed_links_count += 1
+        if not success:
+            failed_links_count += 1
+        else:
+            skipped_links_count += skipped
+        
+        # Update progress bar
+        cache_progress_bar.update(1)
+        cache_progress_bar.set_postfix({
+            "processed": f"{processed_links_count}/{total_links_to_process}",
+            "skipped": skipped_links_count,
+            "failed": failed_links_count
+        })
+    
+    return skipped
+
+# Create a progress bar for caching and filtering
 cache_progress_bar = tqdm(
     total=total_links_to_process,
     desc="Caching & filtering pages",
@@ -184,34 +243,25 @@ cache_progress_bar = tqdm(
     bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} links [{elapsed}<{remaining}, {rate_fmt}]"
 )
 
-# Process links in batches and manually update the progress bar
-results = []
 skipped = 0
 
 with ThreadPoolExecutor(max_workers=threads) as executor:
     # Submit all tasks and get futures
     futures = [
-        executor.submit(process_links, batch, search_words, must_have_words, anti_kewords)
-        for batch in split_links
+        executor.submit(process_single_link, link, search_words, must_have_words, anti_kewords)
+        for link in links
     ]
     
     # Process futures as they complete
-    for future in futures:
-        batch_result = future.result()
-        skipped += batch_result
-        
-        # Update progress bar for the batch size
-        batch_size = len(split_links[0]) if split_links else 0  # Assuming all batches are roughly the same size
-        cache_progress_bar.update(batch_size)
-        processed_links_count += batch_size
-        
-        # Update progress information
-        cache_progress_bar.set_postfix({
-            "processed": f"{min(processed_links_count, total_links_to_process)}/{total_links_to_process}",
-            "skipped": skipped
-        })
+    for future in concurrent.futures.as_completed(futures):
+        try:
+            result = future.result()
+            skipped += result
+        except Exception as e:
+            print(f"Error in future: {str(e)}")
 
 cache_progress_bar.close()
+print(f"\nCaching complete: {processed_links_count} links processed, {skipped_links_count} skipped, {failed_links_count} failed")
     
 if debug:
     if len(links) > 0:
@@ -249,7 +299,37 @@ random.shuffle(links)
 
 # Create a progress bar for GPT summary generation
 total_links_for_gpt = len(links)
+processed_gpt_count = 0
+failed_gpt_count = 0
+
 print(f"Generating summaries for {total_links_for_gpt} jobs...")
+
+# Function to process a single link for GPT summary and handle errors
+def process_gpt_summary(link, api_key):
+    global processed_gpt_count, failed_gpt_count
+    try:
+        result = generate_gpt_summary(link, api_key)
+        success = True
+    except Exception as e:
+        print(f"Error generating summary for: {link}\n{str(e)}")
+        result = None
+        success = False
+    
+    # Update counters
+    with progress_lock:
+        processed_gpt_count += 1
+        if not success:
+            failed_gpt_count += 1
+        
+        # Update progress bar
+        gpt_progress_bar.update(1)
+        gpt_progress_bar.set_postfix({
+            "processed": f"{processed_gpt_count}/{total_links_for_gpt}",
+            "failed": failed_gpt_count,
+            "success_rate": f"{(processed_gpt_count-failed_gpt_count)/processed_gpt_count:.1%}" if processed_gpt_count > 0 else "0%"
+        })
+    
+    return result
 
 gpt_progress_bar = tqdm(
     total=total_links_for_gpt,
@@ -261,24 +341,19 @@ gpt_progress_bar = tqdm(
 with ThreadPoolExecutor(max_workers=threads) as executor:
     # Submit all tasks and get futures
     futures = [
-        executor.submit(generate_gpt_summary, link, open_ai_key)
+        executor.submit(process_gpt_summary, link, open_ai_key)
         for link in links
     ]
     
     # Process futures as they complete
     for future in concurrent.futures.as_completed(futures):
-        # Each completed future represents one processed job
-        future.result()  # Get the result (or exception)
-        gpt_progress_bar.update(1)
-        
-        # Update progress information
-        completed = gpt_progress_bar.n
-        gpt_progress_bar.set_postfix({
-            "completed": f"{completed}/{total_links_for_gpt}",
-            "completion": f"{completed/total_links_for_gpt:.1%}"
-        })
+        try:
+            future.result()  # Get the result (or exception)
+        except Exception as e:
+            print(f"Error in future: {str(e)}")
 
 gpt_progress_bar.close()
+print(f"\nSummary generation complete: {processed_gpt_count} jobs processed, {failed_gpt_count} failed")
 
 if debug:
     if len(links) > 0:
@@ -306,7 +381,37 @@ if debug:
 
 # Create a progress bar for job match generation
 total_links_for_match = len(links)
+processed_match_count = 0
+failed_match_count = 0
+
 print(f"Generating job matches for {total_links_for_match} jobs...")
+
+# Function to process a single link for job match and handle errors
+def process_job_match(link, resume, api_key):
+    global processed_match_count, failed_match_count
+    try:
+        result = generate_gpt_job_match(link, resume, api_key)
+        success = True
+    except Exception as e:
+        print(f"Error generating job match for: {link}\n{str(e)}")
+        result = None
+        success = False
+    
+    # Update counters
+    with progress_lock:
+        processed_match_count += 1
+        if not success:
+            failed_match_count += 1
+        
+        # Update progress bar
+        match_progress_bar.update(1)
+        match_progress_bar.set_postfix({
+            "processed": f"{processed_match_count}/{total_links_for_match}",
+            "failed": failed_match_count,
+            "success_rate": f"{(processed_match_count-failed_match_count)/processed_match_count:.1%}" if processed_match_count > 0 else "0%"
+        })
+    
+    return result
 
 match_progress_bar = tqdm(
     total=total_links_for_match,
@@ -320,25 +425,21 @@ results = []
 with ThreadPoolExecutor(max_workers=threads) as executor:
     # Submit all tasks and get futures
     futures = [
-        executor.submit(generate_gpt_job_match, link, bullet_resume, open_ai_key)
+        executor.submit(process_job_match, link, bullet_resume, open_ai_key)
         for link in links
     ]
     
     # Process futures as they complete
     for future in concurrent.futures.as_completed(futures):
-        # Each completed future represents one processed job
-        result = future.result()  # Get the result
-        results.append(result)
-        match_progress_bar.update(1)
-        
-        # Update progress information
-        completed = match_progress_bar.n
-        match_progress_bar.set_postfix({
-            "completed": f"{completed}/{total_links_for_match}",
-            "completion": f"{completed/total_links_for_match:.1%}"
-        })
+        try:
+            result = future.result()
+            if result is not None:
+                results.append(result)
+        except Exception as e:
+            print(f"Error in future: {str(e)}")
 
 match_progress_bar.close()
+print(f"\nJob match generation complete: {processed_match_count} jobs processed, {failed_match_count} failed")
 if debug:
     if len(links) > 0:
         now = datetime.now()
