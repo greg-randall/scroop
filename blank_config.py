@@ -38,7 +38,23 @@ must_have_words = [
     'remote'
     ]
 
-
+anti_kewords = [ 
+    "hybrid",
+    "on-site",
+    "on site",
+    "onsite",
+    "in-person",
+    "in person",
+    "inperson",
+    "in-office",
+    "in office",
+    "inoffice",
+    "on-location",
+    "on location",
+    "onlocation",
+    "NON-REMOTE",
+    "NON-HYBRID",
+]
 
 bullet_resume = """Education:
 B.S. Computer Science, University of Georgia
