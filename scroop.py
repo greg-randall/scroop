@@ -12,6 +12,7 @@ from datetime import datetime
 from urllib.parse import quote
 from concurrent.futures import ThreadPoolExecutor
 import itertools
+import concurrent.futures
 from operator import itemgetter
 import shutil
 import csv
@@ -169,44 +170,48 @@ if debug:
 # Assuming links and threads are defined somewhere above
 split_links = split_list(links, threads)
 
-# Calculate total number of links for better progress tracking
+# Create a shared counter for tracking processed links
+processed_links_count = 0
 total_links_to_process = len(links)
-processed_link_count = 0
-valid_link_count = 0
 
-# Function to update progress
-def process_links_with_progress(links_batch, search_words, must_have_words, anti_keywords):
-    global processed_link_count, valid_link_count
-    result = process_links(links_batch, search_words, must_have_words, anti_keywords)
-    # Update counters
-    with progress_lock:
-        processed_link_count += len(links_batch)
-        # Update progress bar
-        cache_progress_bar.update(len(links_batch))
-        cache_progress_bar.set_postfix({
-            "processed": f"{processed_link_count}/{total_links_to_process}",
-            "completion": f"{processed_link_count/total_links_to_process:.1%}"
-        })
-    return result
+print(f"Processing {total_links_to_process} links for caching and filtering...")
+
+# Create a progress bar outside the executor
+cache_progress_bar = tqdm(
+    total=total_links_to_process,
+    desc="Caching & filtering pages",
+    unit="link",
+    bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} links [{elapsed}<{remaining}, {rate_fmt}]"
+)
+
+# Process links in batches and manually update the progress bar
+results = []
+skipped = 0
 
 with ThreadPoolExecutor(max_workers=threads) as executor:
-    # Create a progress bar with more detailed information
-    cache_progress_bar = tqdm(
-        total=total_links_to_process,
-        desc="Caching & filtering pages",
-        unit="link",
-        bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} links [{elapsed}<{remaining}, {rate_fmt}]"
-    )
+    # Submit all tasks and get futures
+    futures = [
+        executor.submit(process_links, batch, search_words, must_have_words, anti_kewords)
+        for batch in split_links
+    ]
     
-    skipped = sum(executor.map(
-        process_links_with_progress, 
-        split_links, 
-        itertools.repeat(search_words, len(split_links)), 
-        itertools.repeat(must_have_words, len(split_links)), 
-        itertools.repeat(anti_kewords, len(split_links))
-    ))
-    
-    cache_progress_bar.close()
+    # Process futures as they complete
+    for future in futures:
+        batch_result = future.result()
+        skipped += batch_result
+        
+        # Update progress bar for the batch size
+        batch_size = len(split_links[0]) if split_links else 0  # Assuming all batches are roughly the same size
+        cache_progress_bar.update(batch_size)
+        processed_links_count += batch_size
+        
+        # Update progress information
+        cache_progress_bar.set_postfix({
+            "processed": f"{min(processed_links_count, total_links_to_process)}/{total_links_to_process}",
+            "skipped": skipped
+        })
+
+cache_progress_bar.close()
     
 if debug:
     if len(links) > 0:
@@ -242,41 +247,38 @@ if debug:
 
 random.shuffle(links)
 
-# Calculate total number of links for better progress tracking
+# Create a progress bar for GPT summary generation
 total_links_for_gpt = len(links)
-processed_gpt_count = 0
+print(f"Generating summaries for {total_links_for_gpt} jobs...")
 
-# Function to update progress
-def generate_gpt_summary_with_progress(link, api_key):
-    global processed_gpt_count
-    result = generate_gpt_summary(link, api_key)
-    # Update counters
-    with progress_lock:
-        processed_gpt_count += 1
-        # Update progress bar
-        gpt_progress_bar.update(1)
-        gpt_progress_bar.set_postfix({
-            "processed": f"{processed_gpt_count}/{total_links_for_gpt}",
-            "completion": f"{processed_gpt_count/total_links_for_gpt:.1%}"
-        })
-    return result
+gpt_progress_bar = tqdm(
+    total=total_links_for_gpt,
+    desc="Generating job summaries",
+    unit="job",
+    bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} jobs [{elapsed}<{remaining}, {rate_fmt}]"
+)
 
 with ThreadPoolExecutor(max_workers=threads) as executor:
-    # Create a progress bar with more detailed information
-    gpt_progress_bar = tqdm(
-        total=total_links_for_gpt,
-        desc="Generating job summaries",
-        unit="job",
-        bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} jobs [{elapsed}<{remaining}, {rate_fmt}]"
-    )
+    # Submit all tasks and get futures
+    futures = [
+        executor.submit(generate_gpt_summary, link, open_ai_key)
+        for link in links
+    ]
     
-    list(executor.map(
-        generate_gpt_summary_with_progress, 
-        links, 
-        itertools.repeat(open_ai_key, len(links))
-    ))
-    
-    gpt_progress_bar.close()
+    # Process futures as they complete
+    for future in concurrent.futures.as_completed(futures):
+        # Each completed future represents one processed job
+        future.result()  # Get the result (or exception)
+        gpt_progress_bar.update(1)
+        
+        # Update progress information
+        completed = gpt_progress_bar.n
+        gpt_progress_bar.set_postfix({
+            "completed": f"{completed}/{total_links_for_gpt}",
+            "completion": f"{completed/total_links_for_gpt:.1%}"
+        })
+
+gpt_progress_bar.close()
 
 if debug:
     if len(links) > 0:
@@ -302,42 +304,41 @@ if debug:
         now = datetime.now()
         before_timestamp = now.timestamp()
 
-# Calculate total number of links for better progress tracking
+# Create a progress bar for job match generation
 total_links_for_match = len(links)
-processed_match_count = 0
+print(f"Generating job matches for {total_links_for_match} jobs...")
 
-# Function to update progress
-def generate_gpt_job_match_with_progress(link, resume, api_key):
-    global processed_match_count
-    result = generate_gpt_job_match(link, resume, api_key)
-    # Update counters
-    with progress_lock:
-        processed_match_count += 1
-        # Update progress bar
-        match_progress_bar.update(1)
-        match_progress_bar.set_postfix({
-            "processed": f"{processed_match_count}/{total_links_for_match}",
-            "completion": f"{processed_match_count/total_links_for_match:.1%}"
-        })
-    return result
+match_progress_bar = tqdm(
+    total=total_links_for_match,
+    desc="Generating job matches",
+    unit="job",
+    bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} jobs [{elapsed}<{remaining}, {rate_fmt}]"
+)
+
+results = []
 
 with ThreadPoolExecutor(max_workers=threads) as executor:
-    # Create a progress bar with more detailed information
-    match_progress_bar = tqdm(
-        total=total_links_for_match,
-        desc="Generating job matches",
-        unit="job",
-        bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} jobs [{elapsed}<{remaining}, {rate_fmt}]"
-    )
+    # Submit all tasks and get futures
+    futures = [
+        executor.submit(generate_gpt_job_match, link, bullet_resume, open_ai_key)
+        for link in links
+    ]
     
-    results = list(executor.map(
-        generate_gpt_job_match_with_progress, 
-        links, 
-        [bullet_resume]*len(links), 
-        [open_ai_key]*len(links)
-    ))
-    
-    match_progress_bar.close()
+    # Process futures as they complete
+    for future in concurrent.futures.as_completed(futures):
+        # Each completed future represents one processed job
+        result = future.result()  # Get the result
+        results.append(result)
+        match_progress_bar.update(1)
+        
+        # Update progress information
+        completed = match_progress_bar.n
+        match_progress_bar.set_postfix({
+            "completed": f"{completed}/{total_links_for_match}",
+            "completion": f"{completed/total_links_for_match:.1%}"
+        })
+
+match_progress_bar.close()
 if debug:
     if len(links) > 0:
         now = datetime.now()
