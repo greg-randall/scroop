@@ -23,8 +23,8 @@ from tqdm import tqdm
 
 from config import *
 from functions import *
-
 import subprocess
+import time
 
 
 # Define the output filenames
@@ -83,31 +83,89 @@ progress_lock = threading.Lock()
 
 # Function to process a single URL and handle errors
 def process_single_url(url, search_sites):
-    global processed_urls, found_links, failed_urls
+    global processed_urls, found_links, failed_urls, cached_pages_used
+    
+    # Check if we have a recent cached version of this search page
+    url_hash = hashlib.md5(url.encode()).hexdigest()
+    cache_file = os.path.join('cached_pages', f"{url_hash}_search.html")
+    
+    # Check if cache file exists and is less than 12 hours old
+    use_cache = False
+    if os.path.exists(cache_file):
+        file_time = os.path.getmtime(cache_file)
+        current_time = datetime.now().timestamp()
+        hours_old = (current_time - file_time) / 3600
+        
+        if hours_old < 12:
+            use_cache = True
+            
     try:
-        # Get links from this URL
-        result = get_search_links([url], search_sites)
+        if use_cache:
+            # Read links from cache
+            with open(cache_file, 'r', encoding='utf-8', errors='ignore') as f:
+                page_content = f.read()
+            
+            # Extract links from cached content
+            all_links = extract_links(page_content)
+            result = link_cleaner(all_links, search_sites)
+            
+            # Update progress with cache info
+            with progress_lock:
+                processed_urls += 1
+                found_links += len(result)
+                cached_pages_used += 1
+                progress_bar.update(1)
+                progress_bar.set_postfix({
+                    "processed": f"{processed_urls}/{total_search_urls}",
+                    "links": found_links,
+                    "cached": f"{cached_pages_used}/{processed_urls}",
+                    "failed": failed_urls
+                })
+        else:
+            # Get links from this URL
+            result = get_search_links([url], search_sites)
+            
+            # Save the page content to cache
+            driver = initialize_selenium_browser()
+            try:
+                raw_page = selenium_get_raw_page(driver, url)
+                # Save to cache
+                os.makedirs('cached_pages', exist_ok=True)
+                with open(cache_file, 'w', encoding='utf-8', errors='ignore') as f:
+                    f.write(raw_page)
+            except Exception as e:
+                print(f"Warning: Could not cache search page: {url}\n{str(e)}")
+            finally:
+                driver.quit()
+            
+            # Update progress
+            with progress_lock:
+                processed_urls += 1
+                found_links += len(result)
+                progress_bar.update(1)
+                progress_bar.set_postfix({
+                    "processed": f"{processed_urls}/{total_search_urls}",
+                    "links": found_links,
+                    "cached": f"{cached_pages_used}/{processed_urls}",
+                    "failed": failed_urls
+                })
+                
         success = True
     except Exception as e:
         print(f"Error processing URL: {url}\n{str(e)}")
         result = []
         success = False
-    
-    # Update counters
-    with progress_lock:
-        processed_urls += 1
-        if success:
-            found_links += len(result)
-        else:
-            failed_urls += 1
         
-        # Update progress bar
-        progress_bar.update(1)
-        progress_bar.set_postfix({
-            "processed": f"{processed_urls}/{total_search_urls}",
-            "links": found_links,
-            "failed": failed_urls
-        })
+        # Update counters for failed URLs
+        with progress_lock:
+            processed_urls += 1
+            failed_urls += 1
+            progress_bar.update(1)
+            progress_bar.set_postfix({
+                "processed": f"{processed_urls}/{total_search_urls}",
+                "links": found_links,
+                "failed": failed_urls
+            })
     
     return result
 
@@ -122,6 +180,9 @@ progress_bar = tqdm(
     unit="URL",
     bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} URLs [{elapsed}<{remaining}, {rate_fmt}]"
 )
+
+# Track how many pages we get from cache
+cached_pages_used = 0
 
 with ThreadPoolExecutor(max_workers=threads) as executor:
     # Submit all tasks and get futures
@@ -141,7 +202,7 @@ with ThreadPoolExecutor(max_workers=threads) as executor:
 progress_bar.close()
 links = all_links
 
-print(f"\nSearch complete: {processed_urls} URLs processed, {found_links} links found, {failed_urls} URLs failed")
+print(f"\nSearch complete: {processed_urls} URLs processed, {found_links} links found, {cached_pages_used} from cache, {failed_urls} failed")
 
 if debug:
     now = datetime.now()
