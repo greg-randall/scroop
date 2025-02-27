@@ -43,7 +43,7 @@ def get_page_body_text(raw_page, full_text=False, debug=False):
         return False
 
     # Strip HTML tags and remove extra linebreaks and whitespace
-    clean_text = re.sub(r'\s*\n+\s*', '\n\n', text)
+    clean_text = re.sub('\s*\n+\s*', '\n\n', text)
 
     # Unsmarten quotes
     clean_text = clean_text.replace("‘", "'").replace("’", "'").replace("“", '"').replace("”", '"')
@@ -116,7 +116,7 @@ def extract_links(page_content: str, debug: bool = False) -> list:
     page_content = re.sub('&amp;', '&', page_content)
 
     # Remove linebreaks and existing tildes
-    page_content = re.sub(r'\n|~', ' ', page_content)
+    page_content = re.sub('\n|~', ' ', page_content)
 
     # Add a newline and a tilde before each opening link tag and a newline after each closing link tag
     page_content = re.sub('<link>', '\n~<link>', page_content)
@@ -522,73 +522,44 @@ def process_links(links, search_words, must_have_words, anti_kewords):
 
 def generate_gpt_summary(link, open_ai_key, debug=False):
     # Fetch the page content and cache it for 30 days (720 hours = 30 days)
-    driver = initialize_selenium_browser()
-    try:
-        page_content_raw = get_page_content(driver, link, 720, debug)
+    page_content_raw = get_page_content(initialize_selenium_browser(),link, 720, True)
 
-        # Extract the body text from the page content
-        page_content = get_page_body_text(page_content_raw, False, debug)
+    # Extract the body text from the page content
+    page_content = get_page_body_text(page_content_raw, False, True)
 
-        if page_content == False:
-            print(f"page content is false for {link}")
-            # Create a placeholder summary to avoid errors in the job match phase
-            filename = f"{hashlib.md5(link.encode()).hexdigest()}_summary.txt"
-            filepath = os.path.join('cached_pages', filename)
-            with open(filepath, 'w') as file:
-                file.write("No content could be extracted from this page.")
-                
-            # Create a placeholder rating to avoid errors in the results phase
-            rating_filename = f"{hashlib.md5(link.encode()).hexdigest()}_rating.txt"
-            rating_filepath = os.path.join('cached_pages', rating_filename)
-            with open(rating_filepath, 'w') as file:
-                file.write("1")  # Low rating for pages with no content
-                
-            return "No content could be extracted from this page."
+    if page_content==False:
+        print(f"page content is false for {link}")
+        return False
 
-        # If there is page content and it's at least 50 characters long
-        if page_content and len(page_content) >= 50:
-            # Generate the filename for the summary file
-            filename = f"{hashlib.md5(link.encode()).hexdigest()}_summary.txt"
-            filepath = os.path.join('cached_pages', filename)
+    # If there is page content and it's at least 50 characters long
+    if page_content and len(page_content) >= 50:
+        # Generate the filename for the summary file
+        filename = f"{hashlib.md5(link.encode()).hexdigest()}_summary.txt"
+        filepath = os.path.join('cached_pages', filename)
 
-            # If the summary file doesn't exist
-            if not os.path.exists(filepath):
-                # Generate a summary of the page content using the GPT model
-                prompt = f"Please read this job listing and write a concise summary of required skills, degrees, etc:\n\n{page_content}"
-                job_summary = gpt_me(prompt, "gpt-4o-mini", open_ai_key, debug)
+        # If the summary file doesn't exist
+        if not os.path.exists(filepath):
+            # Generate a summary of the page content using the GPT-3.5-turbo model
+            prompt = f"Please read this job listing and write a concise summary of required skills, degrees, etc:\n\n{page_content}"
+            job_summary = gpt_me(prompt, "gpt-4o-mini", open_ai_key, debug)
 
-                if job_summary == False:
-                    print(f"Error: job summary is false for {link}")
-                    # Create a placeholder summary
-                    job_summary = "Failed to generate summary for this job listing."
-                
+            if job_summary==False:
+                print(f"Error: job summary is false for {link}")
+                return False
+            else:
                 # Save the summary to the file
                 with open(filepath, 'w') as file:
                     file.write(job_summary)
-            else:
-                # If the summary file exists, read the summary from the file
-                with open(filepath, 'r') as file:
-                    job_summary = file.read()
-
-            # Return the summary
-            return job_summary
         else:
-            # If content is too short, create placeholder files
-            filename = f"{hashlib.md5(link.encode()).hexdigest()}_summary.txt"
-            filepath = os.path.join('cached_pages', filename)
-            with open(filepath, 'w') as file:
-                file.write("Content too short to generate a meaningful summary.")
-                
-            # Create a placeholder rating
-            rating_filename = f"{hashlib.md5(link.encode()).hexdigest()}_rating.txt"
-            rating_filepath = os.path.join('cached_pages', rating_filename)
-            with open(rating_filepath, 'w') as file:
-                file.write("1")  # Low rating for pages with short content
-                
-            return "Content too short to generate a meaningful summary."
-    finally:
-        # Always close the driver
-        driver.quit()
+            # If the summary file exists, read the summary from the file
+            with open(filepath, 'r') as file:
+                job_summary = file.read()
+
+        # Return the summary
+        return job_summary
+
+    # If there is no page content or it's less than 50 characters long, return False
+    return False
 
 
 def generate_gpt_job_match(link, bullet_resume, open_ai_key, debug=False):
@@ -598,68 +569,31 @@ def generate_gpt_job_match(link, bullet_resume, open_ai_key, debug=False):
     filename = f"{hashlib.md5(link.encode()).hexdigest()}_summary.txt"
     filepath = os.path.join('cached_pages', filename)
 
-    # Check if summary file exists
     if not os.path.exists(filepath):
-        # Create a placeholder summary and rating
-        with open(filepath, 'w') as file:
-            file.write("No summary available for this job.")
-        
-        rating_filename = f"{hashlib.md5(link.encode()).hexdigest()}_rating.txt"
-        rating_filepath = os.path.join('cached_pages', rating_filename)
-        with open(rating_filepath, 'w') as file:
-            file.write("1")  # Default low rating
-        
-        return 1
-    
-    # Read the job summary
-    with open(filepath, 'r') as file:
-        job_summary = file.read()
-    
-    # Check if job summary has enough content
-    if len(job_summary) >= 25:
-        rating_filename = f"{hashlib.md5(link.encode()).hexdigest()}_rating.txt"
-        rating_filepath = os.path.join('cached_pages', rating_filename)
+        return False
+    else:
+        with open(filepath, 'r') as file:
+            job_summary = file.read()
+    if len(job_summary) >=25:
+        filename = f"{hashlib.md5(link.encode()).hexdigest()}_rating.txt"
+        filepath = os.path.join('cached_pages', filename)
 
-        if not os.path.exists(rating_filepath):
-            try:
-                # Use the LLM to generate a job match rating
-                prompt = f"Read the applicant's RESUME and JOB SUMMARY below and determine if the applicant is a good fit for this job on a scale of 1 to 10. 1 is a bad fit, 10 is a perfect fit. REPLY WITH AN INTEGER 1-10!!!\n\nRESUME:  {bullet_resume}\n\nJOB SUMMARY:  {job_summary}"
-                job_is_a_good_match = gpt_range(prompt, "gpt-4o-mini", open_ai_key, debug)
-                
-                # Handle case where gpt_range returns None
-                if job_is_a_good_match is None:
-                    job_is_a_good_match = 1  # Default low rating
-                
-                # Write the rating to file
-                with open(rating_filepath, 'w') as file:
-                    file.write(str(job_is_a_good_match))
-            except Exception as e:
-                # If there's an error, create a default rating
-                print(f"Error generating job match: {e}")
-                job_is_a_good_match = 1
-                with open(rating_filepath, 'w') as file:
-                    file.write(str(job_is_a_good_match))
+        if not os.path.exists(filepath):
+            # Use the LLM to generate a summary of the job listing
+            prompt = f"Read the applicant's RESUME and JOB SUMMARY below and determine if the applicant is a good fit for this job on a scale of 1 to 10. 1 is a bad fit, 10 is a perfect fit. REPLY WITH AN INTEGER 1-10!!!\n\nJOB SUMMARY:  {bullet_resume}\n\nJOB SUMMARY:  {job_summary}"
+            job_is_a_good_match = gpt_range(prompt,"gpt-4o-mini", open_ai_key,True)
+            with open(filepath, 'w') as file:
+                file.write(str(job_is_a_good_match))
+
         else:
-            # Read existing rating
-            with open(rating_filepath, 'r') as file:
-                job_is_a_good_match = file.read().strip()
-                try:
-                    job_is_a_good_match = int(job_is_a_good_match)
-                except ValueError:
-                    # If rating can't be converted to int, use default
-                    job_is_a_good_match = 1
-                    with open(rating_filepath, 'w') as file:
-                        file.write(str(job_is_a_good_match))
+            with open(filepath, 'r') as file:
+                job_is_a_good_match = file.read()
+
 
         return job_is_a_good_match
-    else:
-        # If summary is too short, create a default rating
-        rating_filename = f"{hashlib.md5(link.encode()).hexdigest()}_rating.txt"
-        rating_filepath = os.path.join('cached_pages', rating_filename)
-        with open(rating_filepath, 'w') as file:
-            file.write("1")  # Default low rating
-        
-        return 1
+
+    
+    return False
 
 
 def split_list(input_list, size):
