@@ -531,11 +531,23 @@ for i, link in enumerate(links, start=1):
     filepath = os.path.join('cached_pages', filename)
 
     try:
-        # Attempt to open the file and read the job match rating
-        with open(filepath, 'r') as file:
-            job_match = file.read()
-
-        job_match = int(job_match.strip())
+        # Check if rating file exists, create it if it doesn't
+        if not os.path.exists(filepath):
+            # Create a default rating file
+            with open(filepath, 'w') as file:
+                file.write("1")  # Default low rating
+            job_match = 1
+        else:
+            # Read the job match rating
+            with open(filepath, 'r') as file:
+                job_match_str = file.read().strip()
+                try:
+                    job_match = int(job_match_str)
+                except ValueError:
+                    # If rating can't be converted to int, use default
+                    job_match = 1
+                    with open(filepath, 'w') as file:
+                        file.write("1")
 
         # Print the current link and its job match rating
         progress_list = f"{i}/{len(links)}: {link} - {job_match}"
@@ -546,13 +558,19 @@ for i, link in enumerate(links, start=1):
             # Write the job match, job URL, and job description to the file
             summary_string_temp += f"{job_match} -- {link}\n"
             # Read the summary from the summary file
-            filename = f"{hashlib.md5(link.encode()).hexdigest()}_summary.txt"
-            filepath = os.path.join('cached_pages', filename)
-            with open(filepath, 'r') as summary_file:
-                summary = summary_file.read()
+            summary_filename = f"{hashlib.md5(link.encode()).hexdigest()}_summary.txt"
+            summary_filepath = os.path.join('cached_pages', summary_filename)
+            
+            # Check if summary file exists, create it if it doesn't
+            if not os.path.exists(summary_filepath):
+                with open(summary_filepath, 'w') as summary_file:
+                    summary_file.write("No summary available for this job.")
+                summary = "No summary available for this job."
+            else:
+                with open(summary_filepath, 'r') as summary_file:
+                    summary = summary_file.read()
 
-            summary_string_temp +=f"Job Description:\n{summary}\n\n\n\n"
-
+            summary_string_temp += f"Job Description:\n{summary}\n\n\n\n"
             output_summary.append(summary_string_temp)
         elif job_match >= 6:
             cprint(f" {progress_list}", 'blue')
@@ -575,36 +593,39 @@ for i, link in enumerate(links, start=1):
         # If an error occurs, print the link in red
         cprint(f"Error: {e}\n\t{link}", 'red')
         
-        # Remove the link from the scanned sites log file, so we'll try again next time
-        with open('scanned_sites.log', 'r') as file:
-            lines = [line for line in file if line.strip("\n") != link]
-        with open('scanned_sites.log', 'w') as file:
-            file.writelines(lines)
-        print("\tRemoved from scanned sites log")
-        
-        # Generate a filename based on the MD5 hash of the link
-        filename_hash = hashlib.md5(link.encode()).hexdigest()
-        # Get a list of all files in the directory
-        files = os.listdir('cached_pages')
+        try:
+            # Remove the link from the scanned sites log file, so we'll try again next time
+            with open('scanned_sites.log', 'r') as file:
+                lines = [line for line in file if line.strip("\n") != link]
+            with open('scanned_sites.log', 'w') as file:
+                file.writelines(lines)
+            print("\tRemoved from scanned sites log")
+            
+            # Generate a filename based on the MD5 hash of the link
+            filename_hash = hashlib.md5(link.encode()).hexdigest()
+            # Get a list of all files in the directory
+            files = os.listdir('cached_pages')
 
-        # Iterate over the files
-        for file in files:
-            # If the filename_hash is in the file name
-            if filename_hash in file:
-                # Check if the 'cached_pages/removed' directory exists, create it if it doesn't
-                removed_dir = 'cached_pages/removed'
-                if not os.path.exists(removed_dir):
-                    os.makedirs(removed_dir)
-                # Construct the full file path
-                file_path = os.path.join('cached_pages', file)
+            # Check if the 'cached_pages/removed' directory exists, create it if it doesn't
+            removed_dir = os.path.join('cached_pages', 'removed')
+            if not os.path.exists(removed_dir):
+                os.makedirs(removed_dir)
 
-                # Construct the destination path
-                dest_path = os.path.join(removed_dir, file)
+            # Iterate over the files
+            for file in files:
+                # If the filename_hash is in the file name
+                if filename_hash in file:
+                    # Construct the full file path
+                    file_path = os.path.join('cached_pages', file)
 
-                # Move the file
-                shutil.move(file_path, dest_path)
+                    # Construct the destination path
+                    dest_path = os.path.join(removed_dir, file)
 
-                print(f"\tMoved cached file to - {dest_path}")
+                    # Move the file
+                    shutil.move(file_path, dest_path)
+                    print(f"\tMoved cached file to - {dest_path}")
+        except Exception as move_error:
+            print(f"\tError cleaning up files: {move_error}")
 
 
 # Sort the output data by the job match rating highest to lowest
