@@ -53,6 +53,7 @@ def get_page_body_text(raw_page, full_text=False, debug=False):
 
 
 def get_page_content(driver, url, cache_age=72, debug=False):
+    
     # Convert cache age to seconds
     cache_age *= 60 * 60
 
@@ -81,6 +82,9 @@ def get_page_content(driver, url, cache_age=72, debug=False):
 
     # Get the raw page content
     output = selenium_get_raw_page(driver, url, debug)
+
+    #print("we are sleeping the long sleeps seconds since this is a first run it'll get lots and lots of links")
+    #time.sleep(60)
 
     # If the output is not None or empty, save it to a file and return it
     if output:
@@ -198,11 +202,11 @@ def link_cleaner(links, search_sites, debug=False):
     return list(set(clean_links))
 
 
-def find_keywords(page_content, search_words, must_have_words, debug=False):
+def find_keywords(page_content, search_words, must_have_words, anti_kewords, debug=False):
     # Convert the page content to lowercase once, to avoid doing it for each word
     page_content = page_content.lower()
 
-    removal_words = ['facebook']
+    removal_words = [] # maybe words like "facebook"
 
     # Remove the removal words from the page content.
     # In case there are collsions between parts of the searchwords, ie searching for "book" but the page contains "facebook"
@@ -244,6 +248,12 @@ def find_keywords(page_content, search_words, must_have_words, debug=False):
         # If all must-have words are found and the keyword is found, return True
         elif must_have_words_match == len(must_have_words) and keyword_found_match == True:
             return True
+        
+    #if we find any anti-words, we should return false
+    if len(anti_kewords):
+        for word in anti_kewords:
+            if word in page_content:
+                return False
 
     # If there are no must-have words, return True if the keyword is found, False otherwise
     return keyword_found_match
@@ -478,7 +488,7 @@ def get_search_links(urls, search_sites, debug=False):
     return all_links
 
 
-def process_links(links, search_words, must_have_words):
+def process_links(links, search_words, must_have_words, anti_kewords):
 
     return_count = 0
 
@@ -495,7 +505,7 @@ def process_links(links, search_words, must_have_words):
         # If there is body text
         if page_content:
             # Check if any of the search words are in the body text
-            found_word = find_keywords(page_content, search_words, must_have_words)
+            found_word = find_keywords(page_content, search_words, must_have_words, anti_kewords)
 
             # If a search word was not found
             if not found_word:
@@ -512,10 +522,10 @@ def process_links(links, search_words, must_have_words):
 
 def generate_gpt_summary(link, open_ai_key, debug=False):
     # Fetch the page content and cache it for 30 days (720 hours = 30 days)
-    page_content_raw = get_page_content(initialize_selenium_browser(),link, 720)
+    page_content_raw = get_page_content(initialize_selenium_browser(),link, 720, True)
 
     # Extract the body text from the page content
-    page_content = get_page_body_text(page_content_raw)
+    page_content = get_page_body_text(page_content_raw, False, True)
 
     if page_content==False:
         print(f"page content is false for {link}")
@@ -531,7 +541,7 @@ def generate_gpt_summary(link, open_ai_key, debug=False):
         if not os.path.exists(filepath):
             # Generate a summary of the page content using the GPT-3.5-turbo model
             prompt = f"Please read this job listing and write a concise summary of required skills, degrees, etc:\n\n{page_content}"
-            job_summary = gpt_me(prompt, "gpt-3.5-turbo", open_ai_key, debug)
+            job_summary = gpt_me(prompt, "gpt-4o-mini", open_ai_key, debug)
 
             if job_summary==False:
                 print(f"Error: job summary is false for {link}")
@@ -571,7 +581,7 @@ def generate_gpt_job_match(link, bullet_resume, open_ai_key, debug=False):
         if not os.path.exists(filepath):
             # Use the LLM to generate a summary of the job listing
             prompt = f"Read the applicant's RESUME and JOB SUMMARY below and determine if the applicant is a good fit for this job on a scale of 1 to 10. 1 is a bad fit, 10 is a perfect fit. REPLY WITH AN INTEGER 1-10!!!\n\nJOB SUMMARY:  {bullet_resume}\n\nJOB SUMMARY:  {job_summary}"
-            job_is_a_good_match = gpt_range(prompt,"gpt-4o", open_ai_key,True)
+            job_is_a_good_match = gpt_range(prompt,"gpt-4o-mini", open_ai_key,True)
             with open(filepath, 'w') as file:
                 file.write(str(job_is_a_good_match))
 
