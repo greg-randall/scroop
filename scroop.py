@@ -67,22 +67,51 @@ if debug: #this debug will record the time it takes to perform the searches/gpts
 
 split_site_search_list = split_list(site_search_list, threads)
 
+# Calculate total number of search URLs for better progress tracking
+total_search_urls = len(site_search_list)
+print(f"Processing {total_search_urls} search URLs...")
+
+# Create a shared counter for progress tracking
+processed_urls = 0
+found_links = 0
+
+# Function to update progress
+def get_search_links_with_progress(urls_batch, search_sites):
+    global processed_urls, found_links
+    result = get_search_links(urls_batch, search_sites)
+    # Update counters
+    with progress_lock:
+        processed_urls += len(urls_batch)
+        found_links += len(result)
+        # Update progress bar
+        progress_bar.update(len(urls_batch))
+        progress_bar.set_postfix({
+            "processed": f"{processed_urls}/{total_search_urls}",
+            "links found": found_links,
+            "completion": f"{processed_urls/total_search_urls:.1%}"
+        })
+    return result
+
+# Import threading Lock for thread-safe counter updates
+import threading
+progress_lock = threading.Lock()
+
 # Get the search links from the search sites
 with ThreadPoolExecutor(max_workers=threads) as executor:
     # Create a progress bar with more detailed information
     progress_bar = tqdm(
-        total=len(split_site_search_list),
+        total=total_search_urls,
         desc="Searching job sites",
-        unit="batch",
-        bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} batches [{elapsed}<{remaining}, {rate_fmt}]"
+        unit="URL",
+        bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} URLs [{elapsed}<{remaining}, {rate_fmt}]"
     )
     
     # Process each batch and update the progress bar
-    all_links = []
-    for result in executor.map(get_search_links, split_site_search_list, itertools.repeat(search_sites, len(split_site_search_list))):
-        all_links.append(result)
-        progress_bar.update(1)
-        progress_bar.set_postfix({"links found": sum(len(batch) for batch in all_links)})
+    all_links = list(executor.map(
+        get_search_links_with_progress, 
+        split_site_search_list, 
+        itertools.repeat(search_sites, len(split_site_search_list))
+    ))
     
     progress_bar.close()
     links = all_links
@@ -140,8 +169,44 @@ if debug:
 # Assuming links and threads are defined somewhere above
 split_links = split_list(links, threads)
 
+# Calculate total number of links for better progress tracking
+total_links_to_process = len(links)
+processed_link_count = 0
+valid_link_count = 0
+
+# Function to update progress
+def process_links_with_progress(links_batch, search_words, must_have_words, anti_keywords):
+    global processed_link_count, valid_link_count
+    result = process_links(links_batch, search_words, must_have_words, anti_keywords)
+    # Update counters
+    with progress_lock:
+        processed_link_count += len(links_batch)
+        # Update progress bar
+        cache_progress_bar.update(len(links_batch))
+        cache_progress_bar.set_postfix({
+            "processed": f"{processed_link_count}/{total_links_to_process}",
+            "completion": f"{processed_link_count/total_links_to_process:.1%}"
+        })
+    return result
+
 with ThreadPoolExecutor(max_workers=threads) as executor:
-    skipped = sum(tqdm(executor.map(process_links, split_links, itertools.repeat(search_words, len(split_links)), itertools.repeat(must_have_words, len(split_links)), itertools.repeat(anti_kewords, len(split_links))), total=len(split_links)))
+    # Create a progress bar with more detailed information
+    cache_progress_bar = tqdm(
+        total=total_links_to_process,
+        desc="Caching & filtering pages",
+        unit="link",
+        bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} links [{elapsed}<{remaining}, {rate_fmt}]"
+    )
+    
+    skipped = sum(executor.map(
+        process_links_with_progress, 
+        split_links, 
+        itertools.repeat(search_words, len(split_links)), 
+        itertools.repeat(must_have_words, len(split_links)), 
+        itertools.repeat(anti_kewords, len(split_links))
+    ))
+    
+    cache_progress_bar.close()
     
 if debug:
     if len(links) > 0:
@@ -176,8 +241,42 @@ if debug:
         before_timestamp = now.timestamp()
 
 random.shuffle(links)
+
+# Calculate total number of links for better progress tracking
+total_links_for_gpt = len(links)
+processed_gpt_count = 0
+
+# Function to update progress
+def generate_gpt_summary_with_progress(link, api_key):
+    global processed_gpt_count
+    result = generate_gpt_summary(link, api_key)
+    # Update counters
+    with progress_lock:
+        processed_gpt_count += 1
+        # Update progress bar
+        gpt_progress_bar.update(1)
+        gpt_progress_bar.set_postfix({
+            "processed": f"{processed_gpt_count}/{total_links_for_gpt}",
+            "completion": f"{processed_gpt_count/total_links_for_gpt:.1%}"
+        })
+    return result
+
 with ThreadPoolExecutor(max_workers=threads) as executor:
-    list(tqdm(executor.map(generate_gpt_summary, links, itertools.repeat(open_ai_key, len(links))), total=len(links)))
+    # Create a progress bar with more detailed information
+    gpt_progress_bar = tqdm(
+        total=total_links_for_gpt,
+        desc="Generating job summaries",
+        unit="job",
+        bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} jobs [{elapsed}<{remaining}, {rate_fmt}]"
+    )
+    
+    list(executor.map(
+        generate_gpt_summary_with_progress, 
+        links, 
+        itertools.repeat(open_ai_key, len(links))
+    ))
+    
+    gpt_progress_bar.close()
 
 if debug:
     if len(links) > 0:
@@ -203,8 +302,42 @@ if debug:
         now = datetime.now()
         before_timestamp = now.timestamp()
 
+# Calculate total number of links for better progress tracking
+total_links_for_match = len(links)
+processed_match_count = 0
+
+# Function to update progress
+def generate_gpt_job_match_with_progress(link, resume, api_key):
+    global processed_match_count
+    result = generate_gpt_job_match(link, resume, api_key)
+    # Update counters
+    with progress_lock:
+        processed_match_count += 1
+        # Update progress bar
+        match_progress_bar.update(1)
+        match_progress_bar.set_postfix({
+            "processed": f"{processed_match_count}/{total_links_for_match}",
+            "completion": f"{processed_match_count/total_links_for_match:.1%}"
+        })
+    return result
+
 with ThreadPoolExecutor(max_workers=threads) as executor:
-    results = list(tqdm(executor.map(generate_gpt_job_match, links, [bullet_resume]*len(links), [open_ai_key]*len(links)), total=len(links)))
+    # Create a progress bar with more detailed information
+    match_progress_bar = tqdm(
+        total=total_links_for_match,
+        desc="Generating job matches",
+        unit="job",
+        bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} jobs [{elapsed}<{remaining}, {rate_fmt}]"
+    )
+    
+    results = list(executor.map(
+        generate_gpt_job_match_with_progress, 
+        links, 
+        [bullet_resume]*len(links), 
+        [open_ai_key]*len(links)
+    ))
+    
+    match_progress_bar.close()
 if debug:
     if len(links) > 0:
         now = datetime.now()
