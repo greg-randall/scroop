@@ -8,3 +8,4 @@ cached_pages/*
 old*
 *.txt
 
+.aider*
